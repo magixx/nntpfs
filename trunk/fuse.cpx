@@ -1,0 +1,518 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+uses includes, globals;
+
+char *fuseargs[10];
+int fuseargcnt=2;
+
+int runfuse();
+
+implementation
+
+uses group, groupmanager, groupsp, openfile;
+		
+static void interpretpath(string path, int &group, int &typ, string &sel, string &fname)
+{
+	string sgrp=path;
+	string extrapath="";
+	sel="";
+	fname="";
+	typ=0;
+	int ssplit=path.find(".");
+	int ss2;
+	if (ssplit>0) 
+	{
+		sgrp=path.substr(0,ssplit);
+		extrapath=path.substr(ssplit,99999);
+	}
+	int sgl=sgrp.length();
+	if (sgl>0) if (sgrp[sgl-1]=='/') sgrp=sgrp.substr(0,sgl-1);
+	if (sgrp.length()>0) if (sgrp[0]=='/') sgrp=sgrp.substr(1,sgl);
+	group=gg.find(sgrp,0,0,"/");
+	if (group<0) return ;
+	if (extrapath=="")
+	{
+		typ=1;
+		return;
+	}
+	ss2=-1;
+	ssplit=extrapath.find("/");
+	int modif=0;
+	if (ssplit>=0) ss2=extrapath.find("/",ssplit+1);
+	if (ss2>=0)
+	{
+		modif|=2;
+		fname=extrapath.substr(ss2+1,extrapath.length());
+	}
+	if (ss2<0) ss2=extrapath.length();
+	if (ssplit>=0)
+	{
+		sel=extrapath.substr(ssplit+1,ss2-ssplit-1);
+		extrapath=extrapath.substr(0,ssplit);
+		modif|=1;
+	}
+	if (extrapath==".byauthor")
+	{
+		typ=0x10 | modif;
+		return;
+	}
+	if (extrapath==".files")
+	{
+		fname=sel;
+		if (modif==1) modif=3;
+		typ=0x20 | modif;
+		return;
+	}
+	if (extrapath==".sorted")
+	{
+		typ=0x30 | modif;
+		return;
+	}
+	if (extrapath==".bydate")
+	{
+		typ=0x40 | modif;
+		return;
+	}	
+	typ=0;
+	return;
+}
+
+static int nntpfs_getattr(const char *path, struct stat *stbuf)
+{
+	int res = 0;
+	
+	int grp,typ;
+	string sel,fname;
+	interpretpath(path,grp,typ,sel,fname);
+	
+	memset(stbuf, 0, sizeof(struct stat));
+	if (typ==1) 
+	{
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		stbuf->st_size=gg.getartcount(grp)+gg.subgroups(grp);
+	}
+	else if (typ==0x20)
+	{
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		stbuf->st_size=gg.getartcount(grp);
+	}
+	else if (typ==0x10) 
+	{
+		//groupsp g(grp);
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		//stbuf->st_size=g->fn_posters.v.size();
+	}
+	else if (typ==0x30) 
+	{
+		//groupsp g(grp);
+		stbuf->st_mode = S_IFDIR | 0755;
+		stbuf->st_nlink = 2;
+		//stbuf->st_size=g->fn_subgroups.v.size();
+	}
+	else if (typ==0x11)
+	{
+		groupsp g(grp);
+		int pid=g->fn_posters.find(sel,0);
+		if (pid<0)
+		{
+			res=-ENOENT;
+		}
+		else
+		{
+			res=0;
+			stbuf->st_mode = S_IFDIR | 0755;
+			stbuf->st_nlink = 2;
+			stbuf->st_size=g->fid_byposter[pid].size();
+		}
+	}
+	else if (typ==0x31)
+	{
+		groupsp g(grp);
+		int pid=g->fn_subgroups.find(sel,0);
+		if (pid<0)
+		{
+			res=-ENOENT;
+		}
+		else
+		{
+			res=0;
+			stbuf->st_mode = S_IFDIR | 0755;
+			stbuf->st_nlink = 2;
+			stbuf->st_size=g->fid_bysubgroup[pid].size();
+		}
+	}
+	else if (typ==0x13 || typ==0x23 || typ==0x33 || typ==0x43)
+	{
+		groupsp g(grp);
+		// we don't bother to check if it's the right poster
+		int fid=g->filenames.find(fname,0);
+		if (fid<0)
+		{
+			res=-ENOENT;
+		}
+		else
+		{
+			res=0;
+			stbuf->st_mode = S_IFREG | 0444;
+			stbuf->st_nlink = 1;
+			stbuf->st_size=g->fis.fil[fid].sizetotal;
+		}
+		return res;
+	}
+	else res = -ENOENT;
+	return res;
+}
+
+static int nntpfs_opendir(const char *path, fuse_file_info *fi)
+{
+	int grp,typ;
+	string sel,fname;
+	interpretpath(path,grp,typ,sel,fname);
+	if (grp<0) return -ENOENT;
+	if (typ==1)
+	{
+		fi->fh=grp+0x01000000;
+		return 0;	
+	}
+	if (typ==0x10 || typ==0x20 || typ==0x30)
+	{
+		fi->fh=grp+typ*0x1000000;
+		return 0;
+	}
+	if (typ==0x11)
+	{
+		groupsp g(grp);
+		int sid=g->fn_posters.find(sel,0);
+		if (sid<0) return -ENOENT;
+		fi->fh=grp+0x11000000+0x100000000ll*sid;
+		return 0;
+	}
+	if (typ==0x31)
+	{
+		groupsp g(grp);
+		int sid=g->fn_subgroups.find(sel,0);
+		if (sid<0) return -ENOENT;
+		fi->fh=grp+0x31000000+0x100000000ll*sid;
+		return 0;
+	}
+	return -ENOENT;
+}
+
+static int nntpfs_releasedir(const char *path, fuse_file_info *fi)
+{
+}
+
+static int filldirent(fuse_fill_dir_t filler, void *buf, off_t &offset, string name,
+		      struct stat *st, off_t &coffset)
+{
+	coffset++;
+	if (coffset<=offset) return 0;
+	return filler(buf,name.c_str(),st,coffset);
+}
+
+void fillstforgroup(struct stat &st, int grp)
+{
+	memset(&st,0,sizeof(st));
+	//st.st_mode=S_IFDIR;
+	st.st_ino=grp+10;
+	st.st_atime=st.st_mtime=st.st_ctime=100000;
+	st.st_nlink=2;
+	st.st_mode= S_IFDIR | 0755;
+			
+}
+
+static int readdir_groups(void *buf, fuse_fill_dir_t filler,  off_t offset, fuse_file_info *fi)
+{
+	int i;
+	off_t coffset=0;
+	struct stat st;
+	memset(&st,0,sizeof(st));
+	int grp=fi->fh & 0x00ffffff;
+	st.st_ino=0;
+	st.st_mode=S_IFDIR;
+	if (filldirent(filler,buf,offset,".",&st,coffset)) return 0;
+	if (filldirent(filler,buf,offset,"..",&st,coffset)) return 0;
+	if (gg.getartcount(grp)>0)
+	{
+		if (filldirent(filler,buf,offset,".files",&st,coffset)) return 0;
+		if (filldirent(filler,buf,offset,".sorted",&st,coffset)) return 0;
+		if (filldirent(filler,buf,offset,".byauthor",&st,coffset)) return 0;
+		if (filldirent(filler,buf,offset,".bydate",&st,coffset)) return 0;
+	}
+	for (i=0; i<gg.subgroups(grp); i++)
+	{
+		int sgid=gg.v[grp].children[i];
+		fillstforgroup(st,i);
+		if (filldirent(filler,buf,offset,gg.getsubgroupname(grp,i),&st,coffset)) return 0;
+	}
+	return 0;
+}
+
+static int readdir_byposter(void *buf, fuse_fill_dir_t filler, off_t offset, fuse_file_info *fi)
+{
+	struct stat st;
+	int i;
+	int grp=fi->fh & 0x00ffffff;
+	groupsp g(grp);
+
+	memset(&st,0,sizeof(st));
+	st.st_ino=0;
+	st.st_mode=S_IFDIR | 0755;
+	int cp=g->fn_posters.v.size();
+	for (i=offset; i<cp; i++)
+	{
+		string name=g->fn_posters.v[i];
+		st.st_size=g->fid_byposter[i].size();
+		if (filler(buf,name.c_str(),&st,i+1)) return 0;
+	}
+	return 0;
+}
+
+static int readdir_ofposter(void *buf, fuse_fill_dir_t filler, off_t offset, fuse_file_info *fi)
+{
+	struct stat st;
+	int i;
+	int grp=fi->fh & 0x00ffffff;
+	int sid=(fi->fh >> 32) & 0x0fffffff;
+	int fc;
+	groupsp g(grp);
+
+	st.st_ino=0;
+	st.st_mode=0644;	
+	if (sid>=g->fid_byposter.size())
+	{
+		printf("err in listing ofposter, bad poster id\n");
+		return 0;
+	}
+	fc=g->fid_byposter[sid].size();
+	for (i=offset; i<fc; i++)
+	{
+		int fid=g->fid_byposter[sid][i];
+		if (fid<0 || fid>=g->fis.fil.size())
+		{
+			printf("err in listing ofposter, bad file\n");
+			return 0;
+		}
+		string name=g->fis.fil[fid].filename;
+		st.st_size=g->fis.fil[fid].sizetotal;
+		if (filler(buf,name.c_str(),&st,i+1)) return 0;
+	}
+	return 0;
+}
+
+static int readdir_bysorted(void *buf, fuse_fill_dir_t filler, off_t offset, fuse_file_info *fi)
+{
+	struct stat st;
+	int i;
+	int grp=fi->fh & 0x00ffffff;
+	groupsp g(grp);
+
+	memset(&st,0,sizeof(st));
+	st.st_ino=0;
+	st.st_mode=S_IFDIR | 0755;
+	int cp=g->fn_subgroups.v.size();
+	for (i=offset; i<cp; i++)
+	{
+		string name=g->fn_subgroups.v[i];
+		st.st_size=g->fid_bysubgroup[i].size();
+		if (filler(buf,name.c_str(),&st,i+1)) return 0;
+	}
+	return 0;
+}
+
+static int readdir_ofsorted(void *buf, fuse_fill_dir_t filler, off_t offset, fuse_file_info *fi)
+{
+	struct stat st;
+	int i;
+	int grp=fi->fh & 0x00ffffff;
+	int sid=(fi->fh >> 32) & 0x0fffffff;
+	int fc;
+	groupsp g(grp);
+
+	st.st_ino=0;
+	st.st_mode=0644;
+	if (sid>=g->fid_bysubgroup.size())
+	{
+		printf("err in listing ofsubgroup, bad subgroup id\n");
+		return 0;
+	}
+	fc=g->fid_bysubgroup[sid].size();
+	for (i=offset; i<fc; i++)
+	{
+		int fid=g->fid_bysubgroup[sid][i];
+		if (fid<0 || fid>=g->fis.fil.size())
+		{
+			printf("err in listing ofsubgroup, bad file\n");
+			return 0;
+		}
+		string name=g->fis.fil[fid].filename;
+		st.st_size=g->fis.fil[fid].sizetotal;
+		if (filler(buf,name.c_str(),&st,i+1)) return 0;
+	}
+	return 0;
+}
+
+
+static int readdir_allfiles(void *buf, fuse_fill_dir_t filler, off_t offset, fuse_file_info *fi)
+{
+	struct stat st;
+	int i;
+	int grp=fi->fh & 0x00ffffff;
+	int fc;
+	groupsp g(grp);
+
+	st.st_ino=0;
+	st.st_mode=0644;
+	fc=g->fis.fil.size();
+	for (i=offset; i<fc && i<MAXFILES; i++)
+	{
+		int fid=i;
+		string name=g->fis.fil[fid].filename;
+		st.st_size=g->fis.fil[fid].sizetotal;
+		if (filler(buf,name.c_str(),&st,i+1)) return 0;
+	}
+	return 0;
+}
+
+static int nntpfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
+			 off_t offset, struct fuse_file_info *fi)
+{
+	int i;
+	struct stat st;
+	memset(&st,0,sizeof(st));
+	int typ=(fi->fh)>>24&0x7f;
+	switch (typ)
+	{
+	case 0x01: return readdir_groups(buf, filler, offset, fi);
+	case 0x10: return readdir_byposter(buf, filler, offset, fi);
+	case 0x11: return readdir_ofposter(buf, filler, offset, fi);
+	case 0x20: return readdir_allfiles(buf, filler, offset, fi);
+	case 0x30: return readdir_bysorted(buf, filler, offset, fi);
+	case 0x31: return readdir_ofsorted(buf, filler, offset, fi);
+	}
+	return 0;
+}
+
+static int nntpfs_open(const char *path, struct fuse_file_info *fi)
+{
+	if ((fi->flags & 3) != O_RDONLY)
+		return -EACCES;
+
+	int grp,typ;
+	string sel,fname;
+	interpretpath(path,grp,typ,sel,fname);
+
+	if (typ&3!=3) return -ENOENT;
+	
+	groupsp g(grp);		
+	int fid=g->filenames.find(fname,0);
+	if (fid<0) return -ENOENT;
+
+	openfile *of=ofm.ofacquire(grp,fid);
+	fi->fh=(unsigned int) of;
+	
+	return 0;
+}
+
+static int nntpfs_read(const char *path, char *buf, size_t size, off_t offset,
+		      struct fuse_file_info *fi)
+{
+	openfile *of=(openfile *) fi->fh;
+	if (of)
+	{
+		int rsz=of->read(buf,size,offset);
+		return rsz;
+	}
+	return -ENOENT;
+	/*
+	if(strcmp(path, hello_path) != 0)
+		return -ENOENT;
+
+	len = strlen(hello_str);
+	if (offset < len) {
+		if (offset + size > len)
+			size = len - offset;
+		memcpy(buf, hello_str + offset, size);
+	} else
+		size = 0;
+
+		return size;
+	*/
+}
+
+static int nntpfs_release(const char *path, fuse_file_info *fi)
+{
+	openfile *of=(openfile *) fi->fh;
+	ofm.ofrelease(of);
+	return 0;
+}
+
+static struct fuse_operations nntpfscbk;
+
+int runfuse()
+{
+	//int count,i;
+	
+	nntpfscbk.getattr    = nntpfs_getattr;
+	nntpfscbk.opendir    = nntpfs_opendir;
+	nntpfscbk.readdir    = nntpfs_readdir;
+	nntpfscbk.releasedir = nntpfs_releasedir;
+	nntpfscbk.open       = nntpfs_open;
+	nntpfscbk.read       = nntpfs_read;
+	nntpfscbk.release    = nntpfs_release;
+
+	//for (i=0; i<10; i++) if (fuseargs[i]!=0) count++; else break;
+	
+	fuseargs[0]="nntpfs";
+	fuseargs[1]=strdup(mountdir.c_str());
+	fuseargcnt=2;
+	
+	printf("FUSE: setting args\n");
+	struct fuse_args args = FUSE_ARGS_INIT(fuseargcnt, fuseargs);
+	struct fuse_chan *ch;
+	struct fuse *f;
+	char *mountpoint;
+	int err = -1;
+	printf("FUSE: parsing command line\n");
+	if (fuse_parse_cmdline(&args, &mountpoint, NULL, NULL) != -1
+	    && (ch = fuse_mount(mountpoint, &args)) != NULL
+	   )
+	{
+		printf("FUSE: new\n");
+		f = fuse_new(ch, &args, &nntpfscbk, sizeof(nntpfscbk), NULL);
+		printf("FUSE: loop\n");
+		fuse_loop(f);
+		printf("FUSE: destroy\n");
+		fuse_destroy(f);
+	}
+	printf("FUSE: free args\n");
+	fuse_opt_free_args(&args);
+
+	
+	//return fuse_main(fuseargcnt,fuseargs,&nntpfscbk,NULL);
+}

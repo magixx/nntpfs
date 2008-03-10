@@ -1,0 +1,398 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+uses includes;
+
+int matchnr(const string &s, int &pos, int &v, int &digits);
+int matchnrpk(const string &s, int &opos, int &v);
+int matchch(const string &s, int &pos, char c);
+int matchstr(const string &s, int &pos, string s2);
+int matchext(const string &s, int &pos, int &extid);
+int matchstrvcase(const string &s, int &pos, char *s2, int &cs);
+int matchvset(const string &s, int &pos, char *s2, int &sel);
+int matchvsetcs(const string &s, int &pos, char *s2, int &sel, int &cs);
+int stringsimil(const string &a, const string &b);
+int stringendmatch(const string &a, const string &b, int len=100);
+int stringbeginmatch(const string &a, const string &b, int len=100);
+string expandext(unsigned int i);
+						
+implementation
+
+uses packednumbers;
+
+int matchhextwo(const string &s, int &pos, int &v)
+{
+	if (pos+1>=s.length()) return 0;
+	if (isdigit(s[pos])) v=s[pos]-'0';
+	else if (s[pos]>='A' && s[pos]<'G') v=s[pos]-'A'+10;
+	else if (s[pos]>='a' && s[pos]<'g') v=s[pos]-'a'+10;
+	else return 0;
+	if (isdigit(s[pos+1])) v=v*16+s[pos+1]-'0';
+	else if (s[pos+1]>='A' && s[pos+1]<'G') v=v*16+s[pos+1]-'A'+10;
+	else if (s[pos+1]>='a' && s[pos+1]<'g') v=v*16+s[pos+1]-'a'+10;
+	else return 0;
+	return 1;	
+}
+
+int matchnr(const string &s, int &pos, int &v, int &digits)
+{
+	digits=0;
+	v=0;
+	while (pos<s.length() && isdigit(s[pos])) { v=v*10+s[pos++]-48; digits++; }
+	return (digits>0);
+}
+
+int matchnrpk(const string &s, int &opos, int &v)
+{
+	int pos=opos;
+	int digits=0;
+	v=0;
+	while (pos<s.length() && isdigit(s[pos])) { v=v*10+s[pos++]-48; digits++; }
+	v=packnrlen(v,digits);
+	opos=pos;
+	return (digits>0);
+}
+
+int matchch(const string &s, int &pos, char c)
+{
+	if (s.length()<=pos) return 0;
+	return c==s[pos++];
+}
+
+int matchstr(const string &s, int &pos, string s2)
+{
+	if (s.length()<=pos) return 0;
+	if (0==s.compare(pos,s2.length(),s2))
+	{
+		pos+=s2.length();
+		return 1;
+	}
+	return 0;
+}
+
+int matchvset(const string &s, int &pos, char *seq, int &sel)
+{
+	int sl;
+	sel=0;
+	while (1)
+	{
+		sl=strlen(seq);
+		if (!sl) return 0;
+		if (matchstr(s,pos,seq)) return 1;
+		seq+=strlen(seq)+1;
+		sel++;
+	}
+}
+
+int matchvsetcs(const string &s, int &pos, char *seq, int &sel, int &cs)
+{
+	int sl;
+	sel=0;
+	while (1)
+	{
+		sl=strlen(seq);
+		if (!sl) return 0;
+		if (matchstrvcase(s,pos,seq,cs)) return 1;
+		seq+=strlen(seq)+1;
+		sel++;
+	}
+}
+
+// match string in various case forms: initial, Firstupper=2, ALLUPPER=1
+int matchstrvcase(const string &s, int &pos, char *s2, int &cs)
+{
+	char buf[16];
+	int l=strlen(s2);
+	if (pos+l>s.length()) return 0;
+	char ch=s[pos];
+	int i;
+	cs=0;
+	if (ch==s2[0])
+	{
+		if (0==s.compare(pos,l,s2)) { pos+=l; return 1; }
+	}
+	if (ch!=toupper(s2[0])) return 0;
+	strncpy(buf,s2,16);
+	buf[15]=0;
+	buf[0]=toupper(s2[0]);
+	if (0==s.compare(pos,l,buf)) { pos+=l; cs=2; return 1; }
+	for (i=1; i<l && l<15; i++) buf[i]=toupper(s2[i]);
+	if (0==s.compare(pos,l,buf)) { pos+=l; cs=1; return 1; }
+	return 0;
+}
+
+// extension categorizing and compression
+// 0x0008+case = nzb
+// 0x0010+case = nfo
+// 0x0018+case = par2
+// 0x0020+case = par (must be checked after part
+// 0x0028+case = zip
+// 0x0030+case = part
+// 0x0038+case = vol
+// 0x0040+case = rar
+// 0x0048+case = ace
+// 0x0050+case = sfv
+// 0x0058+case = m3u
+// 0x0060+case = cue
+// 0x0068+case = -sample.avi
+// 0x0070+case = txt
+// 0x0078+case = part.par2
+// 0x10000 + 0x4000*case + nr = part00.rar (case of part ignored)
+// 0x20000 + n2               = part00     (case of part ignored)
+// 0x30000 + 0x4000*case + nr = zip.000
+// 0x40000 + 0x4000*case + nr = vol00
+// 0x50000 + 0x4000*case + nr = vol00+
+// 0x60000 + 0x4000*case + nr = r00+
+// 0x70000 + 0x4000*case + nr = avi.000
+// 0x80000 + 0x4000*case + nr = 000
+// FLG1 + 0x2d00*n2 + n1 = vol11+22.par2
+// FLG2 + 0x2d00*n2 + n1 = vol11+22.par
+// FLG3 + 0x2d00*n2 + n1 = vol11+22
+
+string fixcase(string in, int cs)
+{
+	if (cs==0) return in;
+	string res=in;
+	int i;
+	res[0]=toupper(res[0]);
+	if (cs==1) return res;
+	for (i=1; i<res.length(); i++) res[i]=toupper(res[i]);
+	return res;
+}
+
+string expandext(unsigned int i)
+{
+	int cs;
+	cs=i&3;
+	if (i<0x100) switch (i/8)
+	{
+	case  1: return fixcase("nzb",cs);
+	case  2: return fixcase("nfo",cs);
+	case  3: return fixcase("par2",cs);
+	case  4: return fixcase("par",cs);
+	case  5: return fixcase("zip",cs);
+	case  6: return fixcase("part",cs);
+	case  7: return fixcase("vol",cs);
+	case  8: return fixcase("rar",cs);
+	case  9: return fixcase("ace",cs);
+	case 10: return fixcase("sfv",cs);
+	case 11: return fixcase("m3u",cs);
+	case 12: return fixcase("cue",cs);
+	case 14: return fixcase("txt",cs);
+	case 15: return fixcase("part.par2",cs);
+	default: return 0;
+	}
+	if (i>0x3fffffff)
+	{
+		int a,b,f;
+		unpacktwo(i,a,b,f);
+		string tmp="vol"+unpackntos(a)+"+"+unpackntos(b);
+		if (f==1) return tmp+".par2";
+		if (f==2) return tmp+".par";
+		return tmp;
+	}
+	int n,base;
+	unpackonecs(i,n,cs,base);
+	switch (base)
+	{
+	case  1: return string("part")+unpackntos(n)+"."+fixcase("rar",cs);
+	case  2: return fixcase("part",cs)+unpackntos(n);
+	case  3: return fixcase("zip.",cs)+unpackntos(n);
+	case  4: return fixcase("vol",cs) +unpackntos(n);
+	case  5: return fixcase("vol",cs) +unpackntos(n)+"+";
+	case  6: return fixcase("r",cs)   +unpackntos(n);
+	case  7: return                    unpackntos(n);
+	case  8: return unpackntos(n);		
+	case  9: return fixcase("s",cs)   +unpackntos(n);
+	case 10: return fixcase("z",cs)   +unpackntos(n);
+	}
+	return "";
+}
+
+int matchext(const string &s, int &pos, int &extid)
+{
+	int tmp,up,cs,n,n2;
+	if (matchstrvcase(s,pos,"nzb",cs)) { extid=0x0008+cs; return 1; }
+	if (matchstrvcase(s,pos,"nfo",cs)) { extid=0x0010+cs; return 1; }
+	if (matchstrvcase(s,pos,"par2",cs)) { extid=0x0018+cs; return 1; }
+	if (matchstrvcase(s,pos,"rar",cs)) { extid=0x0040+cs; return 1; }
+	if (matchstrvcase(s,pos,"sfv",cs)) { extid=0x0050+cs; return 1; }
+	if (matchstrvcase(s,pos,"m3u",cs)) { extid=0x0058+cs; return 1; }
+	if (matchstrvcase(s,pos,"cue",cs)) { extid=0x0060+cs; return 1; }
+	if (matchstrvcase(s,pos,"txt",cs)) { extid=0x0070+cs; return 1; }
+	//if (matchstrvcase(s,pos,"-sample.avi",cs)) { extid=0x0068+cs; return 1; }
+	tmp=pos;
+	if (matchstrvcase(s,tmp,"r",cs)) if (matchnrpk(s,tmp,n)) if (n>10)		
+	{
+		extid=packonecs(n,cs,6);
+		pos=tmp;
+		return 1;
+	}
+	tmp=pos;
+	if (matchstrvcase(s,tmp,"s",cs)) if (matchnrpk(s,tmp,n)) if (n>10)
+	{
+		extid=packonecs(n,cs,9);
+		pos=tmp;
+		return 1;
+	}
+	tmp=pos;
+	if (matchstrvcase(s,tmp,"z",cs)) if (matchnrpk(s,tmp,n)) if (n>10)
+	{
+		extid=packonecs(n,cs,10);
+		pos=tmp;
+		return 1;
+	}
+	if (matchnrpk(s,pos,n))
+	{
+		extid=packonecs(n,cs,8);
+		return 1;
+	}
+	tmp=pos;
+	if (matchstrvcase(s,tmp,"avi.",cs)) if (matchnrpk(s,tmp,n))
+	{
+		extid=packonecs(n,cs,7);
+		pos=tmp;
+		return 1;
+	}
+	
+	if (matchstrvcase(s,pos,"ace",cs)) { extid=0x0048+cs; return 1; }
+	if (matchstrvcase(s,pos,"part",cs))
+	{		
+		if (!matchnrpk(s,pos,n))
+		{
+			if (matchstrvcase(s,pos,".par2",cs))
+			{
+				extid=0x0078+cs;
+				return 1;
+			}
+			extid=0x0030+cs;
+			return 1;
+		}
+		if (matchstrvcase(s,pos,".rar",cs))
+		{
+			extid=packonecs(n,cs,1);
+			
+			return 1;
+		}
+		else 
+		{
+			extid=packonecs(n,cs,2);
+		}
+	}
+	if (matchstrvcase(s,pos,"par",cs)) { extid=0x0020+cs; return 1; }
+	
+	if (matchstrvcase(s,pos,"zip",cs))
+	{
+		tmp=pos;
+		if (matchch(s,tmp,'.')) if (matchnrpk(s,tmp,n))
+		{
+			extid=packonecs(n,cs,3);
+			pos=tmp;
+			return 1;
+		}
+		extid=0x0028+cs;
+		return 1;
+
+		return 1;
+	}
+	if (matchstrvcase(s,pos,"vol",cs))
+	{
+		if (!matchnrpk(s,pos,n))
+		{
+			extid=0x0038+cs;
+			return 1;
+		}
+		if (!matchch(s,pos,'+'))
+		{
+			extid=packonecs(n,cs,4);
+			return 1;
+		}
+		if (!matchnrpk(s,pos,n2))
+		{
+			extid=packonecs(n,cs,5);
+			return 1;
+		}
+		if (matchstrvcase(s,pos,".par2",cs))
+		{
+			extid=packtwo(n,n2,1);
+			return 1;
+		}
+		if (matchstrvcase(s,pos,".par",cs))
+		{
+			extid=packtwo(n,n2,2);
+			return 1;
+		}
+		extid=packtwo(n,n2,3);
+		return 1;
+	}
+	return 0;
+}
+
+int stringsimil(const string &a, const string &b)
+{
+	int i,j;
+	int al=a.length();
+	int bl=b.length();
+	char sa[33];
+	char sb[33];
+	int cost[33][33];
+	for (i=0; i<33; i++) cost[0][i]=cost[i][0]=i*3;
+	strncpy(sa,a.c_str(),32);
+	strncpy(sb,b.c_str(),32);
+	
+	int lmin=al<bl?al:bl;
+	int lmax=al>bl?al:bl;
+	
+	if (al>=32) { sa[32]=0; al=32; }
+	if (bl>=32) { sb[32]=0; bl=32; }
+	for (i=1; i<=al; i++)
+		for (j=1; j<=bl; j++)
+		{
+			int c1=cost[i-1][j-1]+((sa[i-1]!=sb[j-1])?2:0);
+			int c2=cost[i-1][j]+3;
+			int c3=cost[i][j-1]+3;
+			if (c2<c1) c1=c2;
+			if (c3<c1) c1=c3;
+			cost[i][j]=c1;
+		}
+	return lmax*3-lmin-cost[al][bl]; // at least 6 characters match
+}
+
+int stringendmatch(const string &a, const string &b, int len)
+{
+	int i;
+	int al=a.length();
+	int bl=b.length();
+	for (i=1; i<=al && i<=bl && i<len; i++) if (a[al-i]!=b[bl-i]) return i-1;
+	return i-1;
+}
+
+int stringbeginmatch(const string &a, const string &b, int len)
+{
+	int i;
+	int al=a.length();
+	int bl=b.length();
+	for (i=0; i<al && i<bl && i<len; i++) if (a[i]!=b[i]) return i;
+	return i;
+}

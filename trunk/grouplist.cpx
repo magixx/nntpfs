@@ -1,0 +1,172 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+uses includes;
+
+struct grouplistitem
+{
+	grouplistitem(int p, string n):parent(p),name(n),artfirst(0),artlast(0){;}
+	int parent;
+	string name;
+	int artfirst;
+	int artlast;
+	vector<int> children;
+};
+
+typedef vector<grouplistitem> groupvector;
+
+class grouplist
+{
+public:
+	grouplist();
+	~grouplist();
+	void loadfromfile(string vfname);
+	void savetofile(string vfname);
+	int  find(string name, int where=0, int addifneeded=0, string sep="/");
+	int  count() { return v.size(); }
+	int  subgroups(int a) { if (a>=0 && a<count()) return v[a].children.size(); return 0; }
+	void updatefirstlast(int n,int f,int l);
+	int  getartcount(int n);
+	
+	string getgroupname(int a) { if (a>=0 && a<count()) return v[a].name; return 0; }
+	string getsubgroupname(int a, int q);
+	string fname;
+	map<string,int> m;
+	vector<grouplistitem> v;
+private:
+};
+
+implementation
+
+string grouplist::getsubgroupname(int a, int q)
+{
+	if (a<0 || a>=count()) return ".err";
+	if (q<0 || q>=v[a].children.size()) return ".err";
+	int child=v[a].children[q];
+	string s=v[child].name;
+	int pnlen=v[a].name.length();
+	if (pnlen!=0) pnlen++;
+	if (s.length()<pnlen+1) return ".db.err";
+	//printf("GNAME:%d %d %d\n",a,child,pnlen);
+	return s.substr(pnlen,9999);
+}
+
+void grouplist::loadfromfile(string vfname)
+{
+	fname=vfname;
+	gzFile fin=gzopen(fname.c_str(),"r");
+	if (fin)
+	{
+		int crt=1;
+		while (1)
+		{
+			char gn[1000];
+			char buf[1000];
+			int parent,af,al;
+			gzgets(fin,buf,999);
+			if (4!=sscanf(buf,"%d %d %d %999s",&parent,&af,&al,gn)) break;
+			v.push_back(grouplistitem(parent,gn));
+			v[parent].children.push_back(crt++);
+			m[gn]=crt-1;
+			v[crt-1].artfirst=af;
+			v[crt-1].artlast=al;
+		}
+		printf("Loaded from file %d groups\n",crt-1);
+		gzclose(fin);
+	}
+}
+
+void grouplist::savetofile(string vfname)
+{
+	gzFile fou=gzopen(vfname.c_str(),"w");
+	int i;
+	if (fou)
+	{
+		for (i=1; i<v.size(); i++)
+		{
+			gzprintf(fou,"%d %d %d %s\n",v[i].parent,v[i].artfirst,v[i].artlast,v[i].name.c_str());
+		}
+		gzclose(fou);
+		printf("Group List saved to file\n");
+	}
+}
+
+void grouplist::updatefirstlast(int n,int f,int l)
+{
+	if (n<0 || n>=count()) return;
+	v[n].artfirst=f;
+	v[n].artlast=l;
+}
+
+int grouplist::getartcount(int n)
+{
+	int l;
+	if (n<0 || n>>count()) return 0;
+	l=v[n].artlast-v[n].artfirst;
+	if (l<0) l=0;
+	return l;
+}	
+
+grouplist::grouplist()
+{
+	v.push_back(grouplistitem(0,""));
+	m[""]=0;
+}
+
+grouplist::~grouplist()
+{
+	int i;
+	if (fname!="") savetofile(fname);
+}
+
+int grouplist::find(string name, int where, int addifneeded, string sep)
+{
+	string cname=name;
+	string pname="";
+	int pnamesplit;
+	map<string,int>::iterator it;
+	int iparent;
+	int crt;
+
+	if (where!=0) cname=v[where].name+sep+name;
+	if (sep!=".")
+	{
+		int i;
+		for (i=0; i<cname.length(); i++)
+			if (cname[i]==sep[0]) cname[i]='.';
+	}
+	it=m.find(cname);
+	if (it!=m.end()) return it->second;
+	if (!addifneeded) return -1;
+
+	pnamesplit=cname.rfind(sep);
+	if (pnamesplit>0) pname=cname.substr(0,pnamesplit);
+
+	iparent=find(pname,0,addifneeded,".");
+	crt=v.size();
+	v.push_back(grouplistitem(iparent,cname));
+	v[iparent].children.push_back(crt);
+	m[cname]=crt;
+	return crt;
+}

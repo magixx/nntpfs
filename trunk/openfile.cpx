@@ -1,0 +1,407 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+uses group;
+
+typedef unsigned long long ull;
+
+class openfile
+{
+public:
+	openfile(fileinfo &a, ull i);
+	int  read(char *buf, int size, int offset);
+	int  loadblock(int n);
+	void readheaders();
+	void interpretheader(string s);
+
+	vector<char> cache;
+	int cachepos;
+	int cachesize;	
+	int cachecrt;
+	int defaultsize;
+	
+	fileinfo fi;
+	ull id;
+	string groupname;
+
+	int       partcount;
+	intvector partsizes;
+	intvector partoffst;
+	intvector partmiss;
+};
+
+class openfilemanager
+{
+public:
+	openfile* ofacquire(int grp, int fid);
+	int isopen(int grp, int fid);
+	openfile* ofacquire(ull id);
+	ull  idtoull(int grp, int fid) { return fid*0x100000000ll+0x23000000+grp; }
+	void ofrelease(int grp, int fid);
+	void ofrelease(ull id);
+	void ofrelease(openfile *of);
+	map<ull,int> m;
+	vector<openfile*> v;
+	vector<int> refs;
+};
+
+openfilemanager ofm;
+
+implementation
+
+uses crc32, globals;
+		
+void openfilemanager::ofrelease(int grp, int fid)
+{
+	ofrelease(idtoull(grp,fid));
+}
+
+void openfilemanager::ofrelease(ull id)
+{
+	map<ull,int>::iterator it=m.find(id);
+	if (it==m.end())
+	{
+		fprintf(errlog,"error: openfilemanager: released unopened\n");
+		return;
+	}
+	int q=it->second;
+	if (refs[q]<=0) fprintf(errlog,"error: openfilemanager: negative refcount\n");
+	refs[q]--;
+	if (refs[q]==0)
+	{
+		// at least do this
+		v[q]->cache.resize(0);
+		v[q]->cachepos=0;
+		v[q]->cachesize=0;
+		v[q]->cachecrt=-1;
+	}
+}
+
+int openfilemanager::isopen(int gid, int fid)
+{
+	ull ufid=idtoull(gid,fid);
+	return m.find(ufid)!=m.end();
+}
+
+void openfilemanager::ofrelease(openfile* of)
+{
+	if (!of) return;
+	ofrelease(of->id);
+}
+
+openfile* openfilemanager::ofacquire(int grp, int fid)
+{
+	ull ufid=idtoull(grp,fid);
+	return ofacquire(ufid);
+}
+
+openfile* openfilemanager::ofacquire(ull ufid)
+{
+	int grp=ufid&0xffffff;
+	int fid=ufid>>32;
+	map<ull,int>::iterator it=m.find(ufid);
+	if (it!=m.end())
+	{
+		int q=it->second;
+		refs[q]++;
+		return v[q];
+	}
+	groupsp g(grp);
+	if (g->fis.fil.size()<=fid)
+	{
+		fprintf(errlog,"Problem in filemanager: file not found in group\n");
+		return NULL;
+	}
+	int crt=v.size();
+	v.push_back(new openfile(g->fis.fil[fid],ufid));
+	refs.push_back(1);
+	m[ufid]=crt;
+	return v.back();
+}
+
+openfile::openfile(fileinfo &a, ull i)
+{
+	int q;
+	id=i;
+	/*
+	fi.flags=a.flags;
+	fi.sizetotal=a.sizetotal;
+	fi.subgroup=a.subgroup;
+	fi.partsfound=a.partsfound;
+	fi.namebase=a.namebase;
+	fi.filename=a.filename;
+	fi.info.resize(a.info.size());
+	*/
+	fi=a;
+	partcount=fi.parts[0].size();
+	partsizes.resize(partcount+1);
+	partoffst.resize(partcount+1);
+	partmiss.resize(partcount+1);
+	for (q=0; q<partcount+1; q++)
+	{
+		partsizes[q]=0;
+		partoffst[q]=0;
+		partmiss[q]=0;
+	}
+	cachesize=0;
+	cachepos=0;
+	cachecrt=-1;
+	groupname=gg.getgroupname(id&0xffffff);
+}
+
+// file reading is really bad right now
+// only sequential is supported
+// and you may have strange behavior when parts are missing
+int openfile::read(char *buf, int size, int offset)
+{
+	int i;
+	int written=0;
+	string result="";
+	if (offset<cachepos)
+	{
+		// rewind, except if we have bad blocks
+		for (i=0; i<cachecrt; i++)
+			if (!partmiss[i] && partoffst[i]<=offset &&
+				partoffst[i]+partsizes[i]>offset)
+			{
+				loadblock(i);
+				break;
+			}
+	}
+	while (1)
+	{
+		if (!size) return written;
+		while (cachepos+cachesize<=offset)
+		{
+			cachecrt++;
+			if (cachecrt>=partcount) return written;
+			loadblock(cachecrt);			
+		}
+		if (cachepos>offset)
+		{
+				// fill in with zeros what we don't have
+			for (i=0; i<size && i<cachepos-offset; i++)
+				buf[i]=0;
+			buf+=i;
+			offset+=i;
+			size-=i;
+			written+=i;
+		}
+		else
+		{
+			for (i=0; i<size && i<cachepos+cachesize-offset; i++)
+				buf[i]=cache[i+offset-cachepos];
+			buf+=i;
+			offset+=i;
+			size-=i;
+			written+=i;
+		}
+	}
+	return written;
+}
+
+/*
+for (i=fi.parts[0].size()-1; i>=0; i--)
+{
+	int id=fi.parts[0][i];
+	if (id==0) continue;
+	sprintf(buf,"HEAD %d",id-1);
+	if (c0->runcommand(buf)) continue;
+	while (c0->datalineavailable())
+		result+=c0->readline()+"\n";
+	break;
+}
+for (i=0; i<size && i+offset<result.length(); i++)
+	buf[i]=result[i];
+*/
+
+int openfile::loadblock(int n)
+{	
+	char buf[32];
+	int artnn=n;
+	cachecrt=n;
+	int i,pos;
+	string res;
+	c0->setgroup(groupname);
+	int totalsize=-1;
+	int thispartbegin=-1;
+	int thispartsize=-1;
+	int thispartend=-1;
+	fprintf(progresslog,"Loading part %d\n",n);
+	if (n<0 || n>=fi.parts[0].size()) return 1;
+	if (partmiss[n]) return 1;
+	if (!fi.flags.partstartzero) artnn++;
+	i=fi.parts[0][artnn]-1;
+	if (i<0)
+	{
+		partmiss[n]=1;
+		return 1;
+	}
+	sprintf(buf,"BODY %d",i);
+	if (c0->runcommand(buf))
+	{
+		if (fi.parts[1].size()>n && (i=fi.parts[1][artnn]-1)>=0) ;
+		else {
+			partmiss[n]=1;
+			return 1;
+		}
+		sprintf(buf,"BODY %d",i);
+		if (c0->runcommand(buf))
+		{
+			partmiss[n]=1;
+			return 0;
+		}
+	}
+	cachesize=0;
+	cache.resize(0);
+	int mode=0; // 0 = plain text, 1=yenc, 2=yencended
+	crc32_t ycrc;
+	while (c0->datalineavailable())
+	{
+		res=c0->readline();
+		pos=0;	
+		if (matchstr(res,pos,"=ybegin "))
+		{
+			cache.resize(0);
+			int ss=res.find("size=",pos);
+			int sf=res.find("name=",pos);
+			if (ss>=0 && ss<sf) totalsize=atoi(res.substr(ss+5).c_str());
+			mode=1;
+			ycrc=crc32(0,NULL,0);
+			continue;
+		}
+		if (matchstr(res,pos,"=ypart "))
+		{
+			int ss,sf;
+			ss=res.find("begin=",pos);
+			if (ss>=0 && ss<sf) thispartbegin=atoi(res.substr(ss+6).c_str());
+			ss=res.find("end=",pos);
+			if (ss>=0 && ss<sf) thispartend=atoi(res.substr(ss+4).c_str());
+			if (thispartbegin>=0 && thispartend>=0) thispartsize=thispartend-thispartbegin;
+			mode=1;
+			continue;
+		}
+		if (matchstr(res,pos,"=yend "))
+		{
+			int ss;
+			ss=res.find("pcrc32=",pos);
+			if (ss<0 && partcount==1) ss=res.find("crc32=",pos)-1;
+			if (ss>=0)
+			{
+				crc32_t ycv=strtol(res.substr(ss+7).c_str(),NULL,16);
+				if (ycrc!=ycv)
+				{
+					fprintf(errlog,"yEnc bad crc: %08x %08x\n",ycv,ycrc);
+				}
+			}
+			mode=2;
+		}
+		if (mode==0)
+		{
+			for (i=0; i<res.size(); i++)
+				cache.push_back(res[i]);
+			cache.push_back('\n');
+			continue;
+		}
+		if (mode==1)
+		{
+			int startdat=cache.size();
+			for (i=0; i<res.length(); i++)
+			{
+				char co=res[i];
+				if (co==0 || co=='\n' || co=='\r') continue;
+				if (co=='=') co=res[++i]-64;
+				co-=42;
+				cache.push_back(co);
+			}
+			// not so nice but don't want to go into this now	
+			ycrc=crc32(ycrc,cache,startdat,cache.size());
+		}
+	}
+	if (thispartsize<0) thispartsize=cache.size();
+	if (cache.size()!=thispartsize)
+	{
+		fprintf(errlog,"FileIO error: part size mismatch %d %d\n",thispartsize,cache.size());
+	}
+	if (n==0) thispartbegin=0;
+	if (!defaultsize) defaultsize=thispartsize;
+	if (thispartbegin<0)
+	{
+		int ref=n-1,j;
+		while (ref>0 && partmiss[ref]) ref--;
+		// assume all parts had the default size
+		fprintf(errlog,"FileIO error: part position marker not found, guessing\n");
+		thispartbegin=(n-ref)*defaultsize;
+	}
+	if (n==partcount-1)
+	{
+		int totsz2=thispartbegin+thispartsize;
+		if (totalsize>0 && totalsize!=totsz2)
+		{
+			fprintf(errlog,"FileIO error: total size mismatch %d %d\n",totalsize, totsz2);
+		}
+		if (totalsize<0) totalsize=totsz2;
+	}
+	if (totalsize>=0 && totalsize!=fi.sizetotal)
+	{
+		fi.sizetotal=totalsize;
+		groupsp g(id&0xffffff);
+		g->fis.fil[id>>32].sizetotal=totalsize;
+	}
+	if (thispartbegin>0 && partoffst[n]!=0 && partoffst[n]!=thispartbegin)
+	{
+		fprintf(errlog,"FileIO error: part start mismatch %d %d\n",thispartbegin,partoffst[n]);
+	}
+	if (thispartbegin>0) partoffst[n]=thispartbegin;
+	if (thispartend>0 && partoffst[n+1]!=0 && partoffst[n+1]!=thispartend)
+	{
+		fprintf(errlog,"FileIO error: part start mismatch end %d %d\n",thispartend,partoffst[n]);
+	}
+	if (thispartend>0) partoffst[n+1]=thispartend;	
+	cachesize=cache.size();
+	cachepos=thispartbegin;
+	return 0;
+}
+
+void openfile::interpretheader(string s)
+{
+}
+
+void openfile::readheaders()
+{
+	char buf[100];
+	int i;
+	sprintf(buf,"GROUP %s",gg.getgroupname(id&0xffffff).c_str());
+	fi.flags.headersread=1;
+	if (c0->runcommand(buf)) return;
+	for (i=0; i<fi.parts[0].size(); i++)
+	{
+		int id=fi.parts[0][i];
+		if (id==0) continue;
+		sprintf(buf,"HEAD %d",id-1);
+		if (c0->runcommand(buf)) continue;
+		while (c0->datalineavailable())
+			interpretheader(c0->readline());	
+	}	
+}

@@ -1,0 +1,125 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+class stringset
+{
+public:
+	~stringset();
+	int  addunique(string s);
+	void addonpos(string s, int pos);
+	int  find(string s, int addifnecessary=1);
+	void writetofile(string s);
+	void writetofile(gzFile f);
+	void readfromfile(gzFile f);
+	map<string,int> m;
+	vector<string> v;
+private:	
+};
+
+implementation
+
+uses includes;
+
+stringset::~stringset()
+{	
+}
+
+int stringset::find(string s, int addifnecessary)
+{
+	map<string,int>::iterator it;
+	it=m.find(s);
+	if (it!=m.end()) return it->second;
+	if (!addifnecessary) return -1;
+	int crt=v.size();
+	v.push_back(s);
+	m[s]=crt;
+	return crt;
+}
+
+void stringset::addonpos(string s, int pos)
+{
+	if (pos<0) return;
+	m[s]=pos;
+	if (pos<v.size())
+	{		
+		v[pos]=s;
+		return;
+	}
+	while (pos>v.size()) v.push_back("");
+	v.push_back(s);
+}
+
+void stringset::writetofile(gzFile fd)
+{
+	int i;
+	gzprintf(fd,"%d\n",v.size());
+	for (i=0; i<v.size(); i++)
+		gzprintf(fd,"%s\n",v[i].c_str());
+}
+
+void stringset::readfromfile(gzFile fd)
+{
+	int count,i;
+	char buf[4000];
+	gzgets(fd,buf,3999);
+	sscanf(buf,"%d",&count);
+	assert(count>=0 && count<100000000);
+	v.resize(count);
+	m=map<string,int>();
+	for (i=0; i<count; i++)
+	{
+		gzgets(fd,buf,3999);
+		int le=strlen(buf);
+		if (le>0 && buf[le-1]=='\n') buf[--le]=0;
+		if (le>0 && buf[le-1]=='\r') buf[--le]=0;
+		v[i]=buf;
+		m[v[i]]=i;
+	}
+}
+
+void stringset::writetofile(string s)
+{
+	int i;
+	gzFile fd=gzopen(s.c_str(),"w");
+	if (fd!=NULL)
+	{
+		writetofile(fd);
+		gzclose(fd);
+	}
+}
+
+int stringset::addunique(string s)
+{
+	string qs=s;
+	int a=find(s,0);
+	int cnt=1;
+	char buf[10];
+	while (a>=0)
+	{
+		sprintf(buf,"(%03d)",cnt++);
+		qs=s+buf;
+		a=find(qs,0);
+	}
+	return find(qs);
+}
