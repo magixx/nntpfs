@@ -1,0 +1,234 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+uses includes;
+
+int packnrlen(int n, int l);
+void unpacknrlen(int &n, int &l);
+int packnumbers(int n1,int d1,int n2,int d2, int flags);
+void unpacknumbers(int v, int &n1, int &d1, int &n2, int &d2, int &flags);
+void unpacknumbertostr(int v, string &s1, string &s2, int &flags);
+int packtwo(int n1, int n2, int base);
+void unpackfour(int v, int &n1, int &d1, int &n2, int &d2, int &flags);
+int packonecs(int n, int cs, int base);
+void unpackonecs(int v, int &n, int &cs, int &base);
+void encint(char *buf,int v, int &lastnz);
+int decint(char *buf, int& post, int &lastnz);
+
+implementation
+
+int packnrlen(int n, int l)
+{
+	if (l>0) n+=1;
+	if (l>1) n+=10;
+	if (l>2) n+=100;
+	if (l>3) n+=1000;
+	if (l>4) n+=10000;
+	if (l>5) n+=100000;
+	if (l>6) n+=1000000;
+	if (l>7) n+=10000000;
+	if (l>8) n+=100000000;
+	if (l>9) n+=1000000000;
+	return n;
+}
+
+void unpacknrlen(int &n, int &l)
+{
+	if (n>=1111111111) { l=10; n=n-1111111111; return; }
+	if (n>= 111111111) { l=9; n=n- 111111111; return; }
+	if (n>=  11111111) { l=8; n=n-  11111111; return; }
+	if (n>=   1111111) { l=7; n=n-   1111111; return; }
+	if (n>=    111111) { l=6; n=n-    111111; return; }
+	if (n>=     11111) { l=5; n=n-     11111; return; }
+	if (n>=      1111) { l=4; n=n-      1111; return; }
+	if (n>=       111) { l=3; n=n-       111; return; }
+	if (n>=        11) { l=2; n=n-        11; return; }
+	if (n>=         1) { l=1; n=n-         1; return; }
+	l=0;
+}
+
+int packnumbers(int n1,int d1,int n2,int d2, int flags)
+{
+	n1=packnrlen(n1,d1);
+	n2=packnrlen(n2,d2);
+	return packtwo(n1,n2,flags);
+}
+
+int packtwo(int n1, int n2, int base)
+{
+	return n1+n2*0x8000+base*0x40000000;
+}
+
+void unpacktwo(int v, int &n1, int &n2, int &flags)
+{
+
+	flags=v>>30;
+	flags&=0x03;
+	v=v&0x3fffffff;
+	n1=v%0x8000;
+	n2=v/0x8000;
+}
+
+void unpackfour(int v, int &n1, int &d1, int &n2, int &d2, int &flags)
+{
+	unpacktwo(v,n1,n2,flags);
+	unpacknrlen(n1,d1);
+	unpacknrlen(n2,d2);
+}
+
+string unpackntos(int v)
+{
+	int n;
+	char buf[12];
+	unpacknrlen(v,n);
+	switch (n)
+	{
+		case 0: sprintf(buf,"");
+		case 1: sprintf(buf,"%d",v); break;
+		case 2: sprintf(buf,"%02d",v); break;
+		case 3: sprintf(buf,"%03d",v); break;
+		case 4: sprintf(buf,"%04d",v); break;
+		case 5: sprintf(buf,"%05d",v); break;
+		case 6: sprintf(buf,"%06d",v); break;
+		case 7: sprintf(buf,"%07d",v); break;
+		case 8: sprintf(buf,"%08d",v); break;
+		case 9: sprintf(buf,"%09d",v); break;
+		default:sprintf(buf,"%010d",v); break;
+	}
+	return buf;
+}
+
+void unpacknumbertostr(int v, string &s1, string &s2, int &flags)
+{
+	int n1,d1,n2,d2;
+	unpacktwo(v,n1,n2,flags);
+	s1=unpackntos(n1);
+	s2=unpackntos(n2);
+}
+
+int packonecs(int n, int cs, int base)
+{
+	return n+cs*0x40000+base*0x100000;
+}
+
+void unpackonecs(int v, int &n, int &cs, int &base)
+{
+	base=v>>20;
+	v=v&0x0fffff;
+	cs=v>>18;
+	n=v&0x03ffff;
+}
+
+void digitencode(char *buf, int &bufpos, int &val, int &cont, int base,int ign=0)
+{
+	if (cont) return;
+	int maxoc=224-base-ign;
+	if (val<maxoc)
+	{
+		//printf("   v:%d\n",val);
+		buf[bufpos++]=32+val;
+		cont=1;
+		return;
+	}
+	val-=maxoc;
+	//printf("   v:%d mx:%d r:%d\n",val,maxoc,val%base);
+	buf[bufpos++]=32+maxoc+val%base;
+	val/=base;
+}
+
+// 32-211 - small numbers 0-199
+// 212-251
+// 250-253 negative
+// 254 sign
+// 255 forbidden
+void encint(char *buf, int v, int &lastnz)
+{
+	int bp=0;
+	buf[1]=0;
+	if (v==0)
+	{
+		buf[0]=255;
+		return;
+	}
+	v-=lastnz;
+	lastnz+=v;
+	if (v<0)
+	{
+		buf[bp++]=250+(v&3);
+		v=-(v>>2);
+	}
+
+	int cont=0;
+	digitencode(buf,bp,v,cont,38,6); // v is now up to 2147483467
+	digitencode(buf,bp,v,cont,64); // v is now up to 2147483467
+	digitencode(buf,bp,v,cont,64); // v is now up to 2147483467
+	digitencode(buf,bp,v,cont,64); // v is now up to 2147483467
+	digitencode(buf,bp,v,cont,224);
+	buf[bp]=0;
+}
+
+void digitdecode(char *buf, int &pos, int &val, int &mult, int& cont, int base, int ign=0)
+{
+	if (cont) return;
+	int maxoc=224-base-ign;
+	int ch=(unsigned char) buf[pos++];
+	assert(ch>=32);
+	ch-=32;
+	if (ch<maxoc)
+	{
+		//printf(" val:%d mult:%d ch:%d base:%d\n",val, mult, ch,base);
+		val+=mult*ch;
+		cont=1;
+		return;
+	}
+	//ch-=maxoc;
+	//printf(" val:%d mult:%d ch:%d base:%d\n",val, mult, ch,base);
+	val+=mult*ch;
+	mult*=base;
+}
+
+int decint(char *buf, int& pos, int &lastnz)
+{
+	int ch=(unsigned char) buf[pos];
+	if (ch==255)
+	{
+		pos++;
+		return 0;
+	}
+	int mult=1, val=0, cont=0;
+	if (ch>=250) 
+	{
+		mult=-4;
+		val=ch-250;
+		pos++;
+	}
+	digitdecode(buf,pos,val,mult,cont,38,6); // v is now up to 2147483467
+	digitdecode(buf,pos,val,mult,cont,64); // v is now up to 2147483467
+	digitdecode(buf,pos,val,mult,cont,64); // v is now up to 2147483467
+	digitdecode(buf,pos,val,mult,cont,64); // v is now up to 2147483467
+	digitdecode(buf,pos,val,mult,cont,224);
+	val+=lastnz;
+	lastnz=val;
+	return val;	
+}

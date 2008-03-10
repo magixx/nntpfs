@@ -1,0 +1,111 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+uses includes, globals, group, packednumbers;
+
+void testgroupcontainer();
+
+implementation
+
+string testgname="abb";
+
+void testnrpacking()
+{
+	char buf[10];
+	int i,j,l,pos;
+	int lasttime=0;
+	int thistime;
+	for (i=-1000000000; i<1000000000; i++)
+	{
+		int lj;
+		int thistime;
+		if (i%971==0) thistime=time(0);
+		if (thistime!=lasttime)
+		{
+			printf("%d       \r",i);
+			fflush(stdout);
+			lasttime=thistime;
+		}
+		l=0;
+		pos=0;
+		encint(buf,i,l);
+		l=0;
+		pos=0;
+		j=decint(buf,pos,l);
+		if (j!=i)
+			printf("conv. error: %d %d\n",i,j);
+		if (j!=lj+1)
+			printf("noncons %d %d %d\n",i,j,lj);
+		lj=j;
+	}
+	return;
+}
+
+void testgrouprw()
+{
+}
+
+void testgroupcontainer()
+{
+	int i,j,l,pos;
+	int lasttime=0;
+	int thistime;
+	char line[10000];
+	gzFile fdat=gzopen((string("nntp/")+testgname+".gz").c_str(),"r");
+	int count=0;
+	printf("\n");
+
+	group test(testgname);
+
+	if (fdat) while (1)
+	{
+		if (!gzgets(fdat,line,9990)) break;
+		int i;
+		if (!isdigit(line[0]) || !isdigit(line[1]) || !isdigit(line[2])) continue;
+		if (!isdigit(line[3]) || !isdigit(line[4]) || !isdigit(line[5])) continue;
+		count++;		
+		if (count%971==0) thistime=time(NULL);
+		if (1) if (thistime-lasttime>0)
+		{
+			if (thistime-lasttime>1) fprintf(stderr,"\n");
+			fprintf(stderr,
+				"\rprocessing:%8d   nameMAP:%d  posters:%d  fileCount:%d mem:%dk"
+				,count
+				,test.artnames.v.size()
+				,test.posters.v.size()
+				,test.fis.fil.size()
+				,(int) sbrk(0)/1024
+			      );
+			fflush(stdout);
+			lasttime=thistime;
+		}
+		//if (count<1355207) continue;
+		test.processentry(line);
+		
+	}
+	fprintf(stderr,"\n\n");
+	gzclose(fdat);
+	//test.artnames.writetofile("nntp/"+testgname+".grouped.gz");
+	test.writetofile("nntp/"+testgname+".group.gz");
+}
