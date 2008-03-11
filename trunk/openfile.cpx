@@ -213,14 +213,26 @@ int openfile::read(char *buf, int size, int offset)
 	string result="";
 	if (offset<cachepos)
 	{
-		// rewind, except if we have bad blocks
-		for (i=0; i<cachecrt; i++)
-			if (!partmiss[i] && partoffst[i]<=offset &&
-				partoffst[i]+partsizes[i]>offset)
+		if (guessing>=0 && hasbeginmarks)
+		{
+			cachecrt=makeguess(offset);
+			loadblock(cachecrt);
+			guessing=1;
+		}
+		else
+		{
+			int bestguess=cachecrt-1;
+			
+			// rewind, except if we have bad blocks
+			for (i=0; i<cachecrt; i++)
 			{
-				loadblock(i);
-				break;
+				if (!partmiss[i] && partoffst[i]<=offset)
+					bestguess=i;
+				if (partoffst[i]>offset) break;
 			}
+			cachecrt=bestguess;
+			loadblock(cachecrt);
+		}
 	}
 	while (1)
 	{
@@ -396,7 +408,9 @@ int openfile::loadblock(int n)
 	if (cache.size()!=thispartsize)
 	{
 		fprintf(errlog,"FileIO error: part size mismatch %d %d\n",thispartsize,cache.size());
-	}
+		cache.resize(thispartsize);
+	}	
+	
 	if (n==0) thispartbegin=0;
 	if (!defaultsize) defaultsize=thispartsize;
 	if (thispartbegin<0 && partoffst[n]!=0) thispartbegin=partoffst[n];	
