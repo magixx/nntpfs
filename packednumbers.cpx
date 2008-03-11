@@ -35,6 +35,7 @@ int packonecs(int n, int cs, int base);
 void unpackonecs(int v, int &n, int &cs, int &base);
 void encint(char *buf,int v, int &lastnz);
 int decint(char *buf, int& post, int &lastnz);
+unsigned long hexatoi(const char *c);
 
 implementation
 
@@ -231,4 +232,19 @@ int decint(char *buf, int& pos, int &lastnz)
 	val+=lastnz;
 	lastnz=val;
 	return val;	
+}
+
+unsigned long hexatoi(const char *c)
+{
+	unsigned long res=0;
+	while (c[0])
+	{
+		char ch=c[0];
+		c++;
+		if (ch>='0' && ch<='9') res=res*16+ch-'0';
+		else if (ch>='a' && ch<='f') res=res*16+ch-'a'+10;
+		else if (ch>='A' && ch<='F') res=res*16+ch-'A'+10;
+		else break;
+	}
+	return res;
 }

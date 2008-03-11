@@ -42,7 +42,7 @@ int guesssize(int b, int l)
 
 void sizeguessupdate(fileinfo &cf, int bytes, int lines, int part)
 {
-	int sg=guesssize(bytes,lines);
+	int sg=bytes;//guesssize(bytes,lines);
 	if (!sg) return;
 	if (!cf.flags.hasparts)
 	{
@@ -50,13 +50,13 @@ void sizeguessupdate(fileinfo &cf, int bytes, int lines, int part)
 		cf.sizetotal=bytes;
 		return;
 	}
-	if (part==cf.parts.size())
+	if (part==cf.parts[0].size())
 	{
 		cf.sizelast=sg;
 		cf.flags.lastguess=1;
 		if (cf.flags.middguess && !cf.flags.sizeknown)
 		{
-			cf.sizetotal=cf.sizemidd*(cf.parts.size()-1)+sg;
+			cf.sizetotal=cf.sizemidd*(cf.parts[0].size()-1)+sg;
 			cf.flags.sizeguess=1;
 		}
 	} 
@@ -66,8 +66,8 @@ void sizeguessupdate(fileinfo &cf, int bytes, int lines, int part)
 		cf.flags.middguess=1;
 		if (!cf.flags.sizeguess && !cf.flags.sizeknown)
 		{
-			if (cf.flags.lastguess) cf.sizetotal=sg*(cf.parts.size()-1)+cf.sizelast;
-			else cf.sizetotal=sg*cf.parts.size();
+			if (cf.flags.lastguess) cf.sizetotal=sg*(cf.parts[0].size()-1)+cf.sizelast;
+			else cf.sizetotal=sg*cf.parts[0].size();
 			cf.flags.sizeguess=1;
 		}
 	}
