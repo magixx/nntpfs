@@ -111,7 +111,7 @@ static const crc32_t crc_table[256] = {
 #define CRC32_DO4(buf)  CRC32_DO2(buf); CRC32_DO2(buf);
 #define CRC32_DO8(buf)  CRC32_DO4(buf); CRC32_DO4(buf);
 
-#define CRC32_DO1NOA(buf,i) crc = crc_table[((int)crc ^ (buf[i])) & 0xff] ^ (crc >> 8);
+#define CRC32_DO1NOA(buf,i) crc = crc_table[((int)crc ^ ((unsigned char) buf[i])) & 0xff] ^ (crc >> 8);
 
 /* ========================================================================= */
 crc32_t crc32(crc32_t crc, const unsigned char *buf, unsigned int len)
@@ -135,5 +135,5 @@ crc32_t crc32(crc32_t crc, const vector<char> &buf, int start, int stop)
 	int i;
 	crc = crc ^ 0xffffffffL;
 	for (i=start; i<stop; i++) CRC32_DO1NOA(buf,i);
-	crc = crc ^ 0xffffffffL;    
+	return crc ^ 0xffffffffL;
 }

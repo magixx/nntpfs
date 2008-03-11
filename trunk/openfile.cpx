@@ -167,6 +167,7 @@ openfile::openfile(fileinfo &a, ull i)
 	cachesize=0;
 	cachepos=0;
 	cachecrt=-1;
+	defaultsize=0;
 	groupname=gg.getgroupname(id&0xffffff);
 }
 
@@ -293,11 +294,11 @@ int openfile::loadblock(int n)
 		}
 		if (matchstr(res,pos,"=ypart "))
 		{
-			int ss,sf;
+			int ss;
 			ss=res.find("begin=",pos);
-			if (ss>=0 && ss<sf) thispartbegin=atoi(res.substr(ss+6).c_str());
+			if (ss>=0) thispartbegin=atoi(res.substr(ss+6).c_str())-1;
 			ss=res.find("end=",pos);
-			if (ss>=0 && ss<sf) thispartend=atoi(res.substr(ss+4).c_str());
+			if (ss>=0) thispartend=atoi(res.substr(ss+4).c_str());
 			if (thispartbegin>=0 && thispartend>=0) thispartsize=thispartend-thispartbegin;
 			mode=1;
 			continue;
@@ -309,10 +310,11 @@ int openfile::loadblock(int n)
 			if (ss<0 && partcount==1) ss=res.find("crc32=",pos)-1;
 			if (ss>=0)
 			{
-				crc32_t ycv=strtol(res.substr(ss+7).c_str(),NULL,16);
+				string crcs=res.substr(ss+7,8);
+				crc32_t ycv=hexatoi(crcs.c_str());
 				if (ycrc!=ycv)
 				{
-					fprintf(errlog,"yEnc bad crc: %08x %08x\n",ycv,ycrc);
+					fprintf(errlog,"yEnc bad crc: expect:%08x found:%08x\n",ycv,ycrc);
 				}
 			}
 			mode=2;
@@ -335,7 +337,6 @@ int openfile::loadblock(int n)
 				co-=42;
 				cache.push_back(co);
 			}
-			// not so nice but don't want to go into this now	
 			ycrc=crc32(ycrc,cache,startdat,cache.size());
 		}
 	}
@@ -346,6 +347,7 @@ int openfile::loadblock(int n)
 	}
 	if (n==0) thispartbegin=0;
 	if (!defaultsize) defaultsize=thispartsize;
+	if (thispartbegin<0 && partoffst[n]!=0) thispartbegin=partoffst[n];	
 	if (thispartbegin<0)
 	{
 		int ref=n-1,j;
@@ -374,6 +376,7 @@ int openfile::loadblock(int n)
 		fprintf(errlog,"FileIO error: part start mismatch %d %d\n",thispartbegin,partoffst[n]);
 	}
 	if (thispartbegin>0) partoffst[n]=thispartbegin;
+	if (thispartend<0 && thispartbegin>=0) thispartend=thispartbegin+thispartsize;
 	if (thispartend>0 && partoffst[n+1]!=0 && partoffst[n+1]!=thispartend)
 	{
 		fprintf(errlog,"FileIO error: part start mismatch end %d %d\n",thispartend,partoffst[n]);
