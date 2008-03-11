@@ -301,6 +301,7 @@ string nntpclient::readlineinternal()
 	string templine="";
 	int i;
 	int readstate=0;
+	int dotstart=0;
 	while (1)
 	{
 		//printf("Buffer: %d %d\n",bufferpos,inbuffer);
@@ -316,9 +317,10 @@ string nntpclient::readlineinternal()
 			state=ERR_DROPPED;
 			return templine;
 		}
-		if (templine=="" && buffer[bufferpos]=='.')
+		if ((!dotstart) && (templine=="") && buffer[bufferpos]=='.')
 		{
 			readstate=1;
+			dotstart=1;
 			bufferpos++;
 		}
 		for (i=bufferpos; i<inbuffer; i++)

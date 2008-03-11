@@ -327,6 +327,8 @@ int openfile::loadblock(int n)
 	while (c0->datalineavailable())
 	{
 		res=c0->readline();
+		//const char *lc=res.c_str();
+		//int llen=res.length();
 		pos=0;	
 		if (matchstr(res,pos,"=ybegin "))
 		{
