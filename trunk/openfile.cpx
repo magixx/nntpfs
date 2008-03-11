@@ -34,7 +34,7 @@ public:
 	int  loadblock(int n);
 	void readheaders();
 	void interpretheader(string s);
-
+	int makeguess(int offset);
 	vector<char> cache;
 	int cachepos;
 	int cachesize;	
@@ -45,7 +45,10 @@ public:
 	ull id;
 	string groupname;
 
+	int       hasbeginmarks;
+	int       regularsizes;
 	int       partcount;
+	int       totalsize;
 	intvector partsizes;
 	intvector partoffst;
 	intvector partmiss;
@@ -158,6 +161,7 @@ openfile::openfile(fileinfo &a, ull i)
 	partsizes.resize(partcount+1);
 	partoffst.resize(partcount+1);
 	partmiss.resize(partcount+1);
+	totalsize=-1;
 	for (q=0; q<partcount+1; q++)
 	{
 		partsizes[q]=0;
@@ -168,7 +172,34 @@ openfile::openfile(fileinfo &a, ull i)
 	cachepos=0;
 	cachecrt=-1;
 	defaultsize=0;
+	hasbeginmarks=0;
+	regularsizes=0;
 	groupname=gg.getgroupname(id&0xffffff);
+}
+
+int openfile::makeguess(int offset)
+{
+	int i;
+	int res;
+	int bestguessbefore=0;
+	int bestguesstop=partcount;
+	for (i=0; i<partcount; i++)
+	{
+		int pof=partoffst[i];
+		if (pof==0) continue;
+		if (pof<=offset && pof+partsizes[i]>offset) return i;
+		if (pof<=offset) bestguessbefore=i;
+		else {
+			bestguesstop=i;
+			break;
+		}
+	}
+	res=offset-partoffst[bestguessbefore];
+	// defaultsize should not be zero because we only call makeguess
+	// when we have read a block already
+	res=bestguessbefore+res/defaultsize;
+	if (res==bestguessbefore && partsizes[bestguessbefore]>0) res++;
+	if (res>=bestguesstop) res=bestguesstop-1;
 }
 
 // file reading is really bad right now
@@ -178,6 +209,7 @@ int openfile::read(char *buf, int size, int offset)
 {
 	int i;
 	int written=0;
+	int guessing=0;
 	string result="";
 	if (offset<cachepos)
 	{
@@ -193,6 +225,21 @@ int openfile::read(char *buf, int size, int offset)
 	while (1)
 	{
 		if (!size) return written;
+		if (totalsize>=0 && offset>=totalsize) return written;
+		if (( guessing>=0 && cachepos+cachesize<=offset && hasbeginmarks)
+			||(guessing==1 && offset<cachepos))
+		{
+			guessing=1;
+			cachecrt=makeguess(offset);
+			//avoid deadlock
+			if (partmiss[cachecrt])
+			{
+				while (cachecrt>0 && partmiss[cachecrt]) cachecrt--;
+				guessing=-1;
+			}
+			loadblock(cachecrt);
+			continue;
+		}
 		while (cachepos+cachesize<=offset)
 		{
 			cachecrt++;
@@ -245,7 +292,6 @@ int openfile::loadblock(int n)
 	int i,pos;
 	string res;
 	c0->setgroup(groupname);
-	int totalsize=-1;
 	int thispartbegin=-1;
 	int thispartsize=-1;
 	int thispartend=-1;
@@ -296,7 +342,11 @@ int openfile::loadblock(int n)
 		{
 			int ss;
 			ss=res.find("begin=",pos);
-			if (ss>=0) thispartbegin=atoi(res.substr(ss+6).c_str())-1;
+			if (ss>=0)
+			{
+				hasbeginmarks=1;
+				thispartbegin=atoi(res.substr(ss+6).c_str())-1;
+			}
 			ss=res.find("end=",pos);
 			if (ss>=0) thispartend=atoi(res.substr(ss+4).c_str());
 			if (thispartbegin>=0 && thispartend>=0) thispartsize=thispartend-thispartbegin;
