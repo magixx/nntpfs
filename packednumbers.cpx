@@ -105,7 +105,7 @@ string unpackntos(int v)
 	unpacknrlen(v,n);
 	switch (n)
 	{
-		case 0: sprintf(buf,"");
+		case 0: buf[0]=0; break;
 		case 1: sprintf(buf,"%d",v); break;
 		case 2: sprintf(buf,"%02d",v); break;
 		case 3: sprintf(buf,"%03d",v); break;
@@ -122,7 +122,7 @@ string unpackntos(int v)
 
 void unpacknumbertostr(int v, string &s1, string &s2, int &flags)
 {
-	int n1,d1,n2,d2;
+	int n1,n2;
 	unpacktwo(v,n1,n2,flags);
 	s1=unpackntos(n1);
 	s2=unpackntos(n2);

@@ -29,7 +29,7 @@ uses globals;
 int group::matchpart(int eid, string msgid, intvector &filedat, int part, int pof, int &warn)
 {
 	int i,j;
-	int hasparts=(pof>0);
+	//int hasparts=(pof>0);
 	int datlen=filedat.size();
 	int chosen;
 	int reason=0;
@@ -56,7 +56,7 @@ int group::matchpart(int eid, string msgid, intvector &filedat, int part, int po
 	if (crtids.size()==0) return addnewentry(eid, msgid, idcrc, filedat, part, pof);
 
 	chosen=-1;
-	for (i=0; i<crtids.size(); i++)
+	for (i=0; i<(int) crtids.size(); i++)
 	{
 		int cfid=crtids[i];
 		fileinfo &cf=fis.fil[cfid];
@@ -103,7 +103,7 @@ int group::matchpart(int eid, string msgid, intvector &filedat, int part, int po
 			break;
 		}
 	}
-	if (chosen==-1) for (i=0; i<crtids.size(); i++)
+	if (chosen==-1) for (i=0; i<(int) crtids.size(); i++)
 	{
 		int cfid=crtids[i];
 		fileinfo &cf=fis.fil[cfid];

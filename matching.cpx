@@ -43,7 +43,7 @@ uses packednumbers;
 
 int matchhextwo(const string &s, int &pos, int &v)
 {
-	if (pos+1>=s.length()) return 0;
+	if (pos+1>=(int) s.length()) return 0;
 	if (isdigit(s[pos])) v=s[pos]-'0';
 	else if (s[pos]>='A' && s[pos]<'G') v=s[pos]-'A'+10;
 	else if (s[pos]>='a' && s[pos]<'g') v=s[pos]-'a'+10;
@@ -59,7 +59,7 @@ int matchnr(const string &s, int &pos, int &v, int &digits)
 {
 	digits=0;
 	v=0;
-	while (pos<s.length() && isdigit(s[pos])) { v=v*10+s[pos++]-48; digits++; }
+	while (pos<(int) s.length() && isdigit(s[pos])) { v=v*10+s[pos++]-48; digits++; }
 	return (digits>0);
 }
 
@@ -68,7 +68,7 @@ int matchnrpk(const string &s, int &opos, int &v)
 	int pos=opos;
 	int digits=0;
 	v=0;
-	while (pos<s.length() && isdigit(s[pos])) { v=v*10+s[pos++]-48; digits++; }
+	while (pos<(int) s.length() && isdigit(s[pos])) { v=v*10+s[pos++]-48; digits++; }
 	v=packnrlen(v,digits);
 	opos=pos;
 	return (digits>0);
@@ -76,13 +76,13 @@ int matchnrpk(const string &s, int &opos, int &v)
 
 int matchch(const string &s, int &pos, char c)
 {
-	if (s.length()<=pos) return 0;
+	if ((int) s.length()<=pos) return 0;
 	return c==s[pos++];
 }
 
 int matchstr(const string &s, int &pos, string s2)
 {
-	if (s.length()<=pos) return 0;
+	if ((int) s.length()<=pos) return 0;
 	if (0==s.compare(pos,s2.length(),s2))
 	{
 		pos+=s2.length();
@@ -124,7 +124,7 @@ int matchstrvcase(const string &s, int &pos, char *s2, int &cs)
 {
 	char buf[16];
 	int l=strlen(s2);
-	if (pos+l>s.length()) return 0;
+	if (pos+l>(int) s.length()) return 0;
 	char ch=s[pos];
 	int i;
 	cs=0;
@@ -177,7 +177,7 @@ string fixcase(string in, int cs)
 	int i;
 	res[0]=toupper(res[0]);
 	if (cs==1) return res;
-	for (i=1; i<res.length(); i++) res[i]=toupper(res[i]);
+	for (i=1; i<(int) res.length(); i++) res[i]=toupper(res[i]);
 	return res;
 }
 
@@ -232,7 +232,7 @@ string expandext(unsigned int i)
 
 int matchext(const string &s, int &pos, int &extid)
 {
-	int tmp,up,cs,n,n2;
+	int tmp,cs,n,n2;
 	if (matchstrvcase(s,pos,"nzb",cs)) { extid=0x0008+cs; return 1; }
 	if (matchstrvcase(s,pos,"nfo",cs)) { extid=0x0010+cs; return 1; }
 	if (matchstrvcase(s,pos,"par2",cs)) { extid=0x0018+cs; return 1; }
