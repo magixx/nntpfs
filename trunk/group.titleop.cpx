@@ -38,22 +38,22 @@ string group::expandtitle(string compressed, vector<int> data, int start, int ig
 	int startpar=start;
 	int total=0;
 	int parcnt=0;
-	for (i=0; i<compressed.length(); i++)
+	for (i=0; i<(int) compressed.length(); i++)
 	{
 		char ch=compressed[i];
 		if (ch<0) total++;
 		if (ch<0 && ch!='\x83') startpar++;
 		if (ch=='\x83') parcnt++;
 	}
-	if (total+start>data.size())
+	if (total+start>(int) data.size())
 	{
 		fprintf(stderr,"Problem expanding name: ran out of data %d/%d\n"
 			,start+total,data.size());
 		return compressed;
 	}
-	for (i=0; i<compressed.length(); i++)
+	for (i=0; i<(int) compressed.length(); i++)
 	{
-		int n1,n2,flg,v;		
+		int n1,n2,flg;
 		char ch=compressed[i];
 		if (ch=='&' && backsp)
 		{
@@ -189,7 +189,7 @@ void group::processtitle(string title, string &vprocessed, vector<int> &vdata, i
 	if (located>=0)
 		printf(" ");
 	*/
-	for (i=0; i<title.length(); i++)
+	for (i=0; i<(int) title.length(); i++)
 	{
 		pvch=cuch;
 		cuch=title[i];
@@ -219,7 +219,7 @@ void group::processtitle(string title, string &vprocessed, vector<int> &vdata, i
 		}
 		if (cuch=='(')
 		{
-			int n1,n2,d1,d2,pos=i+1;
+			int n1,n2,pos=i+1;
 			if (   matchnrpk(title,pos,n1)
 						    && (n1<0x8000)
 						    && matchch(title,pos,'/')
@@ -258,7 +258,7 @@ void group::processtitle(string title, string &vprocessed, vector<int> &vdata, i
 		if (isdigit(cuch) && !isdigit(pvch))
 		{
 			int tmp=i;
-			int n1,tafn,n2,p2,p3,p0,flg,vs;
+			int n1,n2,p2,p3,p0,flg,vs;
 			char ch;
 			matchnrpk(title,tmp,n1);
 			p2=tmp;
@@ -359,7 +359,7 @@ string group::escapefilename(const string &s)
 	char proc[2048];
 	int proclen=0;
 	int i;
-	for (i=0; i<s.length(); i++)
+	for (i=0; i<(int) s.length(); i++)
 	{
 		char ch=s[i];
 		if (ch<32) // signed
@@ -386,9 +386,8 @@ int group::producefilename(const string &s)
 	const int LCUT=768;
 
 	int quotpos;
-	int qp2;
 	int bestsuitablequoted=0;
-	int sl=s.length();
+	//int sl=s.length();
 
 	quotpos=s.find("\"",0);
 	while (quotpos>=0)
@@ -405,7 +404,7 @@ int group::producefilename(const string &s)
 		quotpos=s.find("\"",qp2+1);
 	}
 	res=escapefilename(res);
-	if (res.length()>LCUT) res=res.substr(0,5)+".."+res.substr(res.length()-LCUT+7,LCUT-7);
+	if ((int) res.length()>LCUT) res=res.substr(0,5)+".."+res.substr(res.length()-LCUT+7,LCUT-7);
 	opt=res;
 	int cnt=112;
 	int resl=res.length();

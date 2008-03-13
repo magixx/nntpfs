@@ -62,12 +62,12 @@ implementation
 string grouplist::getsubgroupname(int a, int q)
 {
 	if (a<0 || a>=count()) return ".err";
-	if (q<0 || q>=v[a].children.size()) return ".err";
+	if (q<0 || q>=(int) v[a].children.size()) return ".err";
 	int child=v[a].children[q];
 	string s=v[child].name;
 	int pnlen=v[a].name.length();
 	if (pnlen!=0) pnlen++;
-	if (s.length()<pnlen+1) return ".db.err";
+	if ((int) s.length()<pnlen+1) return ".db.err";
 	//printf("GNAME:%d %d %d\n",a,child,pnlen);
 	return s.substr(pnlen,9999);
 }
@@ -103,7 +103,7 @@ void grouplist::savetofile(string vfname)
 	int i;
 	if (fou)
 	{
-		for (i=1; i<v.size(); i++)
+		for (i=1; i<(int) v.size(); i++)
 		{
 			gzprintf(fou,"%d %d %d %s\n",v[i].parent,v[i].artfirst,v[i].artlast,v[i].name.c_str());
 		}
@@ -136,7 +136,6 @@ grouplist::grouplist()
 
 grouplist::~grouplist()
 {
-	int i;
 	if (fname!="") savetofile(fname);
 }
 
@@ -153,7 +152,7 @@ int grouplist::find(string name, int where, int addifneeded, string sep)
 	if (sep!=".")
 	{
 		int i;
-		for (i=0; i<cname.length(); i++)
+		for (i=0; i<(int) cname.length(); i++)
 			if (cname[i]==sep[0]) cname[i]='.';
 	}
 	it=m.find(cname);

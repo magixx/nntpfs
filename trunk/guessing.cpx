@@ -50,7 +50,7 @@ void sizeguessupdate(fileinfo &cf, int bytes, int lines, int part)
 		cf.sizetotal=bytes;
 		return;
 	}
-	if (part==cf.parts[0].size())
+	if (part==(int) cf.parts[0].size())
 	{
 		cf.sizelast=sg;
 		cf.flags.lastguess=1;

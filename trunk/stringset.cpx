@@ -61,12 +61,12 @@ void stringset::addonpos(string s, int pos)
 {
 	if (pos<0) return;
 	m[s]=pos;
-	if (pos<v.size())
+	if (pos<(int) v.size())
 	{		
 		v[pos]=s;
 		return;
 	}
-	while (pos>v.size()) v.push_back("");
+	while (pos>(int) v.size()) v.push_back("");
 	v.push_back(s);
 }
 
@@ -74,7 +74,7 @@ void stringset::writetofile(gzFile fd)
 {
 	int i;
 	gzprintf(fd,"%d\n",v.size());
-	for (i=0; i<v.size(); i++)
+	for (i=0; i<(int) v.size(); i++)
 		gzprintf(fd,"%s\n",v[i].c_str());
 }
 
@@ -100,7 +100,6 @@ void stringset::readfromfile(gzFile fd)
 
 void stringset::writetofile(string s)
 {
-	int i;
 	gzFile fd=gzopen(s.c_str(),"w");
 	if (fd!=NULL)
 	{

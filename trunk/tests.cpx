@@ -35,11 +35,10 @@ void testnrpacking()
 	char buf[10];
 	int i,j,l,pos;
 	int lasttime=0;
-	int thistime;
+	int thistime=0;
 	for (i=-1000000000; i<1000000000; i++)
 	{
-		int lj;
-		int thistime;
+		int lj=0;
 		if (i%971==0) thistime=time(0);
 		if (thistime!=lasttime)
 		{
@@ -68,9 +67,8 @@ void testgrouprw()
 
 void testgroupcontainer()
 {
-	int i,j,l,pos;
 	int lasttime=0;
-	int thistime;
+	int thistime=0;
 	char line[10000];
 	gzFile fdat=gzopen((string("nntp/")+testgname+".gz").c_str(),"r");
 	int count=0;
@@ -81,7 +79,6 @@ void testgroupcontainer()
 	if (fdat) while (1)
 	{
 		if (!gzgets(fdat,line,9990)) break;
-		int i;
 		if (!isdigit(line[0]) || !isdigit(line[1]) || !isdigit(line[2])) continue;
 		if (!isdigit(line[3]) || !isdigit(line[4]) || !isdigit(line[5])) continue;
 		count++;		

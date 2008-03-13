@@ -93,20 +93,20 @@ void parseServerString(string servstr, string &user, string &passwd, string &ser
 	passwd="";
 	port=119;
 	spos=server.find("@",0);
-	if (spos!=string::npos)
+	if (spos!=(int) string::npos)
 	{
 		user=server.substr(0,spos);
 		server=server.substr(spos+1,10000);
 	}
 	spos=user.find(":",0);
-	if (spos!=string::npos)
+	if (spos!=(int) string::npos)
 	{
 		passwd=user.substr(spos+1,10000);
 		user=user.substr(0,spos);
 	}
 	pss=server;
 	spos=server.find("]",0);
-	if (spos!=string::npos)
+	if (spos!=(int) string::npos)
 	{
 		proto=6;
 		assert(server[0]=='[');
@@ -119,7 +119,7 @@ void parseServerString(string servstr, string &user, string &passwd, string &ser
 		server=server.substr(0,spos);
 	}
 	spos=pss.find(":",0);
-	if (spos!=string::npos)
+	if (spos!=(int) string::npos)
 	{
 		pss=pss.substr(spos+1,10000);
 		port=atoi(pss.c_str());
@@ -409,7 +409,7 @@ int nntpclient::scangroups()
 		cgroup=gg.find(groupname,0,1,".");
 		gg.updatefirstlast(cgroup,firsta,lasta);
 		if (cgroup<0) continue;
-		if (gfirst.size()<=cgroup)
+		if ((int) gfirst.size()<=cgroup)
 		{
 			gfirst.resize(cgroup+1);
 			glast.resize(cgroup+1);
@@ -417,6 +417,7 @@ int nntpclient::scangroups()
 		gfirst[cgroup]=firsta;
 		glast[cgroup]=lasta;
 	}
+	return 1;
 };
 
 void nntpclient::showprogress()

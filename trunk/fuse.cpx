@@ -225,6 +225,7 @@ static int nntpfs_opendir(const char *path, fuse_file_info *fi)
 
 static int nntpfs_releasedir(const char *path, fuse_file_info *fi)
 {
+	return 0;
 }
 
 static int filldirent(fuse_fill_dir_t filler, void *buf, off_t &offset, string name,
@@ -266,7 +267,7 @@ static int readdir_groups(void *buf, fuse_fill_dir_t filler,  off_t offset, fuse
 	}
 	for (i=0; i<gg.subgroups(grp); i++)
 	{
-		int sgid=gg.v[grp].children[i];
+		//int sgid=gg.v[grp].children[i];
 		fillstforgroup(st,i);
 		if (filldirent(filler,buf,offset,gg.getsubgroupname(grp,i),&st,coffset)) return 0;
 	}
@@ -304,7 +305,7 @@ static int readdir_ofposter(void *buf, fuse_fill_dir_t filler, off_t offset, fus
 
 	st.st_ino=0;
 	st.st_mode=0644;	
-	if (sid>=g->fid_byposter.size())
+	if (sid>=(int) g->fid_byposter.size())
 	{
 		printf("err in listing ofposter, bad poster id\n");
 		return 0;
@@ -313,7 +314,7 @@ static int readdir_ofposter(void *buf, fuse_fill_dir_t filler, off_t offset, fus
 	for (i=offset; i<fc; i++)
 	{
 		int fid=g->fid_byposter[sid][i];
-		if (fid<0 || fid>=g->fis.fil.size())
+		if (fid<0 || fid>=(int) g->fis.fil.size())
 		{
 			printf("err in listing ofposter, bad file\n");
 			return 0;
@@ -356,7 +357,7 @@ static int readdir_ofsorted(void *buf, fuse_fill_dir_t filler, off_t offset, fus
 
 	st.st_ino=0;
 	st.st_mode=0644;
-	if (sid>=g->fid_bysubgroup.size())
+	if (sid>=(int) g->fid_bysubgroup.size())
 	{
 		printf("err in listing ofsubgroup, bad subgroup id\n");
 		return 0;
@@ -365,7 +366,7 @@ static int readdir_ofsorted(void *buf, fuse_fill_dir_t filler, off_t offset, fus
 	for (i=offset; i<fc; i++)
 	{
 		int fid=g->fid_bysubgroup[sid][i];
-		if (fid<0 || fid>=g->fis.fil.size())
+		if (fid<0 || fid>=(int) g->fis.fil.size())
 		{
 			printf("err in listing ofsubgroup, bad file\n");
 			return 0;
@@ -402,7 +403,6 @@ static int readdir_allfiles(void *buf, fuse_fill_dir_t filler, off_t offset, fus
 static int nntpfs_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi)
 {
-	int i;
 	struct stat st;
 	memset(&st,0,sizeof(st));
 	int typ=(fi->fh)>>24&0x7f;
@@ -497,7 +497,6 @@ int runfuse()
 	struct fuse_chan *ch;
 	struct fuse *f;
 	char *mountpoint;
-	int err = -1;
 	printf("FUSE: parsing command line\n");
 	if (fuse_parse_cmdline(&args, &mountpoint, NULL, NULL) != -1
 	    && (ch = fuse_mount(mountpoint, &args)) != NULL
@@ -515,4 +514,5 @@ int runfuse()
 
 	
 	//return fuse_main(fuseargcnt,fuseargs,&nntpfscbk,NULL);
+	return 0;
 }
