@@ -328,8 +328,8 @@ void group::sortcontents()
 	int np=posters.v.size();
 	int nf=fis.fil.size();
 	intvector fnamecounts;
-	fn_posters=stringset();
-	fn_subgroups=stringset();
+	fn_posters.clear();
+	fn_subgroups.clear();
 	fid_byposter.resize(np);
 	fnamecounts.resize(artnames.v.size());
 	for (i=0; i<(int) artnames.v.size(); i++) fnamecounts[i]=0;
