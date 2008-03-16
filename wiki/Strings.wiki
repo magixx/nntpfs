@@ -30,7 +30,7 @@ However, when doing profiling I noticed a significant time was spent in string o
 
 In short, I used char &#42; in the following situations in critical code:
   * Characters were appended one by one at the end of a string (the STL library is supposed to handle this well, but apparently it doesn't)
-  * A lot of indexing str[i] was performed
+  * A lot of indexing into the string was performed (for some reson this is slower, possibly bounds checking)
   * There was no question of the ownership of the string: a char&#42; or char[] is used locally in a function and its lifetime is limited by the scope of that function.
 
 You will notice in some cases that i passed strings to functions as references. Although when passing by value the actual contents of the string are not replicated normally I wanted to avoid calling the copy constructor and incrementing/decrementing the reference count.
