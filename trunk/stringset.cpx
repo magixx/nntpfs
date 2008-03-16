@@ -26,6 +26,7 @@ class stringset
 {
 public:
 	~stringset();
+	void clear();
 	int  addunique(string s);
 	void addonpos(string s, int pos);
 	int  find(string s, int addifnecessary=1);
@@ -43,6 +44,12 @@ uses includes;
 
 stringset::~stringset()
 {	
+}
+
+void stringset::clear()
+{
+	m.clear();
+	v.clear();
 }
 
 int stringset::find(string s, int addifnecessary)

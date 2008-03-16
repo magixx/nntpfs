@@ -40,7 +40,8 @@ public:
 	int scangroups();
 	void showprogress();
 	int setgroup(string s);
-	
+	void checkconnectionstate();
+		
 	enum Errors
 	{
 	ERR_NOERROR=0,
@@ -69,7 +70,7 @@ private:
 	addrinfo *sa;
 	int sk;
 	int triedauth;
-	
+	int reconnectatt;
 	int hasdataline;
 	int responseid;
 	string response;
@@ -148,8 +149,10 @@ int nntpclient::reconnect()
 	inbuffer=0;
 	bufferpos=0;
 	triedauth=0;
+	readingstat=0;
 	foundmultiterm=0;
 	hasdataline=0;
+	state=0;
 	justconnected=1;
 	currentgroup="";
 	if (!sa) 
@@ -180,6 +183,44 @@ int nntpclient::reconnect()
 	return 0;
 }
 
+void nntpclient::checkconnectionstate()
+{
+	if (state) while (1)
+	{
+		switch (reconnectatt)
+		{
+		case 0: break;
+		case 1:
+		case 2:
+		case 3:
+			printf("Reconnect failed, waiting 10 seconds\n");
+			sleep(10);
+			break;
+		case 4:
+		case 5:
+		case 6:
+			printf("Reconnect failed several times, waiting 1 minute\n");
+			sleep(60);
+			break;
+		default:
+			printf("Reconnect failed numerous times, waiting 10 minutes\n");
+			sleep(600);
+			break;
+		}
+
+		printf("Attempting reconnect\n");
+		reconnect();
+		reconnectatt++;
+	
+		if (!state && currentgroup!="")
+		{			
+			setgroup(currentgroup);
+		}
+		if (!state) break;
+	}
+	reconnectatt=0;	
+}
+
 int nntpclient::findserver()
 {
 	addrinfo hints;	
@@ -202,13 +243,7 @@ int nntpclient::runcommand(string cmd)
 {
 	readingstat=0;
 	printf("CMD: %s\n",cmd.c_str());
-	if (state && !justconnected) reconnect();
-	if (state)
-	{
-		printf("   ... abandoned\n");
-		return 1;
-	}
-	justconnected=0;
+	checkconnectionstate();
 	while (waitingmultiline) readlineinternal();
 	foundmultiterm=0;
 	waitingmultiline=0;
@@ -265,6 +300,7 @@ nntpclient::nntpclient(string servstr)
 {
 	sa=NULL;
 	sk=-1;
+	reconnectatt=0;
 	parseServerString(servstr,user,passwd,server,port,proto);
 	findserver();
 	reconnect();

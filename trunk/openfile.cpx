@@ -57,6 +57,7 @@ public:
 class openfilemanager
 {
 public:
+	~openfilemanager();
 	openfile* ofacquire(int grp, int fid);
 	int isopen(int grp, int fid);
 	openfile* ofacquire(ull id);
@@ -74,6 +75,17 @@ openfilemanager ofm;
 implementation
 
 uses crc32, globals;
+
+openfilemanager::~openfilemanager()
+{
+	int i;
+	for (i=0; i<v.size(); i++)
+	{
+		delete v[i];
+	}
+	v.clear();
+	m.clear();
+}
 		
 void openfilemanager::ofrelease(int grp, int fid)
 {
