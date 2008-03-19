@@ -1,0 +1,154 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+implementation
+
+uses globals;
+
+int group::matchpart(int eid, string msgid, intvector &filedat, int part, int pof, int &warn)
+{
+	int i,j;
+	//int hasparts=(pof>0);
+	int datlen=filedat.size();
+	int chosen;
+	int reason=0;
+	warn=0;
+	if (part>pof)
+	{
+		warn=1;
+		if (pof==0) part=0;
+		else part%=pof;
+	}
+	intvector crtids;
+	// should be replaced by a better hash to avoid posters that
+	// may try stuff against us	
+	msgidcrc_t idcrc=crc32(0x1781461a,(unsigned char *) msgid.c_str(),msgid.length());
+	
+	for (i=0; i<1000; i++)
+	{
+		filedat[datlen-1]=i;
+		j=fis.find(filedat,0);
+		if (j<0) break;
+		crtids.push_back(j);
+	}
+	// nothing found, add new
+	if (crtids.size()==0) return addnewentry(eid, msgid, idcrc, filedat, part, pof);
+
+	chosen=-1;
+	for (i=0; i<(int) crtids.size(); i++)
+	{
+		int cfid=crtids[i];
+		fileinfo &cf=fis.fil[cfid];
+		if (cf.parts[0][part]!=0)
+		{
+			//if (cf.partcrc[part]==idcrc)
+			//{
+				if (cf.parts[1].size()==0)
+				{
+					cf.parts[1].resize(pof+1);
+					fprintf(errlog,"Duplicates found \n");
+					warn=3;
+				}
+				cf.parts[1][part]=eid+1;
+				chosen=cfid;
+				stat_duplicatesfound++;
+				return cfid;
+			/*
+			assume by default that this is the same file, split in the same way
+			}
+			else
+			{
+				reason=1;
+				continue;
+			}
+			*/
+				
+		}
+		// no more matching, just take the first one
+		chosen=cfid;
+		break;
+		int match1=stringendmatch(msgid,cf.sig,7);
+		int match2=stringbeginmatch(msgid,cf.sig,7);
+		int match3;
+		if (match1>4 || match2>4 || (match1+match2)>6 || cf.flags.idmismatch)
+		{
+			chosen=cfid;
+			break;
+		}
+		match3=stringsimil(msgid,cf.sig);
+		if (match3>9)
+		{
+			chosen=cfid;
+			break;
+		}
+	}
+	if (chosen==-1) for (i=0; i<(int) crtids.size(); i++)
+	{
+		int cfid=crtids[i];
+		fileinfo &cf=fis.fil[cfid];
+		if (cf.parts[0][part]!=0) continue;
+		if (cf.partsfound<3)
+		{
+			int match1=stringendmatch(msgid,cf.sig,7);
+			int match2=stringbeginmatch(msgid,cf.sig,7);
+			int match3=stringsimil(msgid,cf.sig);
+			fprintf(errlog,"\nToo few parts in file and no id match");
+			fprintf(errlog,", nothing to do but guess\n");
+			fprintf(errlog,"   ID:%s ref:%s",msgid.c_str(),cf.sig.c_str());
+			fprintf(errlog,"   end:%d, beg:%d, ov:%d\n",match1, match2, match3);
+			cf.flags.idmismatch=1;
+			chosen=cfid;
+			warn=2;
+			break;
+		}
+	}
+	// none matched	
+	if (chosen==-1)
+	{		
+		warn=3;
+		fprintf(errlog,"\nCreating more files with this name: %s, reason: %d\n",
+			artnames.v[filedat[1]].c_str(), reason);
+		return addnewentry(eid, msgid, idcrc, filedat, part, pof);
+	}
+	fileinfo &cf=fis.fil[chosen];
+	if (part==0) cf.flags.partstartzero=1;
+	cf.partsfound++;
+	cf.parts[0][part]=eid+1;
+	return chosen;
+}
+
+int group::addnewentry(int eid, string msgid, msgidcrc_t idcrc, intvector &filedat, int part, int pof)
+{
+	int id=fis.find(filedat);
+	fileinfo &cf=fis.fil[id];
+	cf.info=filedat;
+	cf.flags.hasparts=(pof>0);
+	cf.parts[0].resize(pof+1);
+	if (pof<1) pof=1;
+	cf.parts[0][part]=eid+1;
+	cf.partsfound=1;
+	cf.sig=msgid; // msgid of the first found part is retained
+	if (part==0) cf.flags.partstartzero=1;
+	return id;
+}
