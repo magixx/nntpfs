@@ -48,10 +48,19 @@ int main(int argc, char *argv[])
 {
 	//testgroupcontainer();
 	//return 0;
+	int i;
+	for (i=1; i<argc; i++)
+	{
+		if (0==strcmp(argv[i],"--version"))
+		{
+			printf("nntpfs version " VER_STRING "\n");
+			return 0;
+		}
+	}
 	if (argc<3)
 	{
 		printf("usage:\n");
-		printf("nntpfs [username[:password]]@server[:port] mountpoint\n\n");
+		printf("nntpfs [username[:password]@]server[:port] mountpoint\n\n");
 		return 1;
 	}
 	server=argv[1];

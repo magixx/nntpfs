@@ -214,6 +214,8 @@ void runfuse()
 
 int main(int argc, char *argv[])
 {
+	int i;
+	
 	mplayerfs_oper.getattr  = mplayerfs_getattr;
 	mplayerfs_oper.fgetattr = mplayerfs_fgetattr;
 	mplayerfs_oper.readdir  = mplayerfs_readdir;
@@ -229,6 +231,11 @@ int main(int argc, char *argv[])
 	params[1]="-";
 	params[2]=0;
 
+	for (i=1; i<argc; i++) if (0==strcmp(argv[i],"--version"));
+	{
+		printf("mplayerfs version 0.99");
+		return 0;
+	}
 	
 	printf("usage: \n");
 	printf("   mplayerfs [mount point] \n");
