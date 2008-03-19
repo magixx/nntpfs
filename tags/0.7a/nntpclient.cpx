@@ -1,0 +1,464 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+uses includes, globals;
+
+class nntpclient
+{
+public:
+	nntpclient(string server);
+	~nntpclient();
+	int status();
+	int reconnect();
+	int authenticate();
+	int findserver();
+	int runcommand(string);
+	int datalineavailable();
+	string readline();
+	int getresponseid();
+	int scangroups();
+	void showprogress();
+	int setgroup(string s);
+	void checkconnectionstate();
+		
+	enum Errors
+	{
+	ERR_NOERROR=0,
+	ERR_NOSOCKET,
+	ERR_NORESOLV,
+	ERR_NOCONNECT,
+	ERR_DROPPED,
+	ERR_UNKNOWNPROTOCOL
+	};
+private:
+	string currentgroup;	
+	vector<int> gfirst,glast;
+	string readlineinternal();
+	char buffer[4096];
+	int foundmultiterm;
+	int waitingmultiline;
+	int justconnected;
+	int inbuffer;
+	int bufferpos;
+	int state;
+	int proto;
+	int port;
+	int readingstat;
+	//hostent *sa;
+	//sockaddr *sa;
+	addrinfo *sa;
+	int sk;
+	int triedauth;
+	int reconnectatt;
+	int hasdataline;
+	int responseid;
+	string response;
+	string dataline;
+	string server;
+	string user;
+	string passwd;
+};
+
+implementation
+
+uses grouplist, globals;
+
+void parseServerString(string servstr, string &user, string &passwd, string &server, int &port, int &proto)
+{
+	int spos;
+	string pss;
+	server=servstr;
+	proto=4;
+	user="";
+	passwd="";
+	port=119;
+	spos=server.find("@",0);
+	if (spos!=(int) string::npos)
+	{
+		user=server.substr(0,spos);
+		server=server.substr(spos+1,10000);
+	}
+	spos=user.find(":",0);
+	if (spos!=(int) string::npos)
+	{
+		passwd=user.substr(spos+1,10000);
+		user=user.substr(0,spos);
+	}
+	pss=server;
+	spos=server.find("]",0);
+	if (spos!=(int) string::npos)
+	{
+		proto=6;
+		assert(server[0]=='[');
+		pss=server.substr(spos+1,10000);
+		server=server.substr(1,spos-1);
+	}
+	else
+	{
+		spos=server.find(":",0);
+		server=server.substr(0,spos);
+	}
+	spos=pss.find(":",0);
+	if (spos!=(int) string::npos)
+	{
+		pss=pss.substr(spos+1,10000);
+		port=atoi(pss.c_str());
+	}
+	printf("user:%s\npass:%s\nserver:%s\nport:%d\n", user.c_str(), passwd.c_str(), server.c_str(), port);
+}
+
+int nntpclient::setgroup(string s)
+{
+	char buf[1024];
+	if (s==currentgroup) return 0;
+	sprintf(buf,"GROUP %s",s.c_str());
+	if (c0->runcommand(buf))
+	{
+		printf("error setting group to %s\n",s.c_str());
+		return 1;
+	}
+	currentgroup=s;
+	return 0;
+}
+
+int nntpclient::reconnect()
+{	
+	int res;
+	if (sk>=0) close(sk);
+	inbuffer=0;
+	bufferpos=0;
+	triedauth=0;
+	readingstat=0;
+	foundmultiterm=0;
+	hasdataline=0;
+	state=0;
+	justconnected=1;
+	currentgroup="";
+	if (!sa) 
+	{
+		state=ERR_NORESOLV;
+		return 1;
+	}
+	sk=socket(sa->ai_family, SOCK_STREAM, IPPROTO_TCP);
+	if (sk<0) 
+	{
+		state=ERR_NOSOCKET;
+		printf("Socket creation failed, error code:%d = %s\n",errno, strerror(errno));
+		return 1;
+	}
+	res=connect(sk,sa->ai_addr,sa->ai_addrlen);
+	if (res) 
+	{
+		state=ERR_NOCONNECT;
+		close(sk);
+		sk=-1;
+		printf("Error: Connection failed, error code:%d = %s\n",errno, strerror(errno));
+		return 1;
+	}
+	printf("Connect succeeded.\n");
+	response=readlineinternal();
+	getresponseid();
+	printf("Server response: %s\n",response.c_str());
+	return 0;
+}
+
+void nntpclient::checkconnectionstate()
+{
+	if (state) while (1)
+	{
+		switch (reconnectatt)
+		{
+		case 0: break;
+		case 1:
+		case 2:
+		case 3:
+			printf("Reconnect failed, waiting 10 seconds\n");
+			sleep(10);
+			break;
+		case 4:
+		case 5:
+		case 6:
+			printf("Reconnect failed several times, waiting 1 minute\n");
+			sleep(60);
+			break;
+		default:
+			printf("Reconnect failed numerous times, waiting 10 minutes\n");
+			sleep(600);
+			break;
+		}
+
+		printf("Attempting reconnect\n");
+		reconnect();
+		reconnectatt++;
+	
+		if (!state && currentgroup!="")
+		{			
+			setgroup(currentgroup);
+		}
+		if (!state) break;
+	}
+	reconnectatt=0;	
+}
+
+int nntpclient::findserver()
+{
+	addrinfo hints;	
+	char sport[10];
+	if (sa!=NULL) return 0;
+	sprintf(sport,"%d",port);
+	memset(&hints,0,sizeof(hints));
+	int res=getaddrinfo(server.c_str(),sport,&hints,&sa);
+	if (res)
+	{
+		state=ERR_NORESOLV;
+		printf("Error: Name resolution failed, error code:%d = %s\n",errno, strerror(errno));
+		return 1;
+	}
+	printf("Found address: %s\n",inet_ntoa(*(in_addr*)(sa->ai_addr->sa_data+2)));
+	return 0;
+}
+
+int nntpclient::runcommand(string cmd)
+{
+	readingstat=0;
+	printf("CMD: %s\n",cmd.c_str());
+	checkconnectionstate();
+	while (waitingmultiline) readlineinternal();
+	foundmultiterm=0;
+	waitingmultiline=0;
+	send(sk,cmd.c_str(),cmd.length(),MSG_MORE);
+	send(sk,"\r\n",2,0);
+	response=readlineinternal();
+	getresponseid();
+	switch (responseid)
+	{
+	case 480:
+		if (!authenticate()) return runcommand(cmd);
+		else return 1;
+		break;
+	case 101:
+	case 100:
+		
+	case 215:
+	case 220:
+	case 221:
+	case 222:
+	case 224:
+	case 225:
+		
+	case 230:
+	case 231:
+		waitingmultiline=1;
+		break;
+	case 211:
+		if (cmd[0]=='L') waitingmultiline=1; // Listgroup
+		break;
+	}
+	return responseid>=400;
+}
+
+int nntpclient::authenticate()
+{
+	if (triedauth) return 1;
+	triedauth=1;
+	runcommand(string("XSECRET ")+user+" "+passwd);
+	if (responseid==290) return 0;
+	if (responseid==500)
+	{
+		runcommand(string("AUTHINFO USER "+user));
+		if (responseid==281) return 0;
+		if (responseid!=381) return 1;
+		runcommand(string("AUTHINFO PASS "+passwd));
+		if (responseid==281) return 0;
+		return 1;
+	}
+	return 1;
+}
+
+nntpclient::nntpclient(string servstr)
+{
+	sa=NULL;
+	sk=-1;
+	reconnectatt=0;
+	parseServerString(servstr,user,passwd,server,port,proto);
+	findserver();
+	reconnect();
+}
+
+int nntpclient::status()
+{
+	return state;
+}
+
+nntpclient::~nntpclient()
+{
+	if (sk>=0) close(sk);
+}
+
+string nntpclient::readline()
+{
+	if (hasdataline) 
+	{
+		hasdataline=0;
+		return dataline;
+	}
+	else return readlineinternal();
+}
+
+string nntpclient::readlineinternal()
+{
+	if (state)
+	{
+		foundmultiterm=1;
+		waitingmultiline=0;
+		return "";
+	}
+	string templine="";
+	int i;
+	int readstate=0;
+	int dotstart=0;
+	while (1)
+	{
+		//printf("Buffer: %d %d\n",bufferpos,inbuffer);
+		if (bufferpos>=inbuffer)
+		{
+			bufferpos=0;
+			inbuffer=recv(sk,buffer,4096,0);
+			readingstat+=inbuffer;
+			showprogress();			
+		}
+		if (inbuffer<=0) 
+		{
+			state=ERR_DROPPED;
+			return templine;
+		}
+		if ((!dotstart) && (templine=="") && buffer[bufferpos]=='.')
+		{
+			readstate=1;
+			dotstart=1;
+			bufferpos++;
+		}
+		for (i=bufferpos; i<inbuffer; i++)
+		{
+			if (buffer[i]=='\r') readstate|=2;
+			else if (buffer[i]=='\n')
+			{
+				if (!(readstate & 2)) printf("Malformed EOLN.\n");
+				readstate |=4;
+				i++;
+				break;
+			} else {
+				if (readstate & 2)
+				{
+					printf("Malformed EOLN.\n");
+					readstate |=4;
+					i++;
+					break;
+				}
+				readstate=0;
+			}
+		}
+		if (readstate==7)
+		{
+			foundmultiterm=1;
+			waitingmultiline=0;
+			readstate=0;
+			bufferpos=i;
+			return "";
+		}
+		int toadd=i-bufferpos;
+		if (readstate==2) toadd=toadd-1;
+		if (readstate==6)
+		{
+			toadd=toadd-2;
+			if (toadd<0) toadd=0;
+		}
+		templine.append(buffer+bufferpos,toadd);
+		bufferpos=i;
+		if (readstate==6) 
+		{
+			readstate=0;
+			break;
+		}
+	}
+	return templine;
+}
+
+int nntpclient::getresponseid()
+{	
+	return responseid=atoi(response.c_str());
+}
+
+int nntpclient::datalineavailable()
+{
+	if (hasdataline) return 1;
+	if (!waitingmultiline) return 0;
+	dataline=readlineinternal();
+	return hasdataline=waitingmultiline;
+}
+
+int nntpclient::scangroups()
+{
+	runcommand("LIST");
+	if (responseid!=215) return 0;
+	while (datalineavailable())
+	{
+		string onegroup=readline();
+		string groupname=onegroup;
+		int split1,split2,lasta,firsta;
+		int cgroup;
+		
+		split1=onegroup.find(" ",0);
+		split2=split1;
+		lasta=firsta=-1;
+		
+		if (split1>0)
+		{
+			split2=onegroup.find(" ",split1+1);
+			// avoid crashing;
+			groupname=onegroup.substr(0,split1);
+			lasta=strtol(onegroup.c_str()+split1,NULL,10);
+		}
+		if (split2>0)
+			firsta=strtol(onegroup.c_str()+split2,NULL,10);
+		cgroup=gg.find(groupname,0,1,".");
+		gg.updatefirstlast(cgroup,firsta,lasta);
+		if (cgroup<0) continue;
+		if ((int) gfirst.size()<=cgroup)
+		{
+			gfirst.resize(cgroup+1);
+			glast.resize(cgroup+1);
+		}
+		gfirst[cgroup]=firsta;
+		glast[cgroup]=lasta;
+	}
+	return 1;
+};
+
+void nntpclient::showprogress()
+{
+	if (!progresslog) return;
+	fprintf(progresslog,"\rReceived data %10d bytes        ",readingstat);
+	fflush(progresslog);
+}
