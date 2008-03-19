@@ -231,9 +231,9 @@ int main(int argc, char *argv[])
 	params[1]="-";
 	params[2]=0;
 
-	for (i=1; i<argc; i++) if (0==strcmp(argv[i],"--version"));
+	for (i=1; i<argc; i++) if (0==strcmp(argv[i],"--version"))
 	{
-		printf("mplayerfs version 0.99");
+		printf("mplayerfs version 0.99\n\n");
 		return 0;
 	}
 	
