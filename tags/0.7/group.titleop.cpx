@@ -1,0 +1,423 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+void inline intpushback(int *d, int &pos, int val, int len=512);
+void inline charpushback(char *d, int &pos, char val, int len=2048);
+void inline charappend(char *d, int &pos, const char *val, int len=2048);
+
+implementation
+
+uses group;
+
+string group::expandtitle(string compressed, vector<int> data, int start, int ignl, int backsp)
+{
+	char proc[2048];
+	int proclen=0;
+	int i;
+	int startpar=start;
+	int total=0;
+	int parcnt=0;
+	for (i=0; i<(int) compressed.length(); i++)
+	{
+		char ch=compressed[i];
+		if (ch<0) total++;
+		if (ch<0 && ch!='\x83') startpar++;
+		if (ch=='\x83') parcnt++;
+	}
+	if (total+start>(int) data.size())
+	{
+		fprintf(stderr,"Problem expanding name: ran out of data %d/%d\n"
+			,start+total,data.size());
+		return compressed;
+	}
+	for (i=0; i<(int) compressed.length(); i++)
+	{
+		int n1,n2,flg;
+		char ch=compressed[i];
+		if (ch=='&' && backsp)
+		{
+			int pos=i+1;
+			int val;
+			if (matchstr(compressed,pos,"SL;"))
+			{
+				charpushback(proc, proclen, '/');
+				i=pos-1;
+				continue;
+			}
+			if (matchstr(compressed,pos,"BS;"))
+			{
+				charpushback(proc, proclen, '\\');
+				i=pos-1;
+				continue;
+			}
+			if (matchstr(compressed,pos,"T;"))
+			{
+				charpushback(proc, proclen, '\t');
+				i=pos-1;
+				continue;
+			}
+			if (matchhextwo(compressed,pos,val))
+			{
+				matchch(compressed,pos,';');
+				charpushback(proc, proclen, val);
+				continue;
+			}
+		}
+		if (ch>=0)
+		{
+			charpushback(proc, proclen, ch);			
+			continue;
+		}
+		if (ch=='\x82')
+		{
+			unpacktwo(data[start++],n1,n2,flg);
+			charpushback(proc, proclen, '[');
+			charappend(proc, proclen, unpackntos(n1).c_str());
+			charpushback(proc, proclen, '/');
+			charappend(proc, proclen, unpackntos(n2).c_str());
+			charpushback(proc, proclen, ']');
+			continue;
+		}
+		if (ch=='\x83')
+		{
+			parcnt--;
+			if (parcnt==0 && ignl) continue;
+			unpacktwo(data[startpar++],n1,n2,flg);
+			if (flg) charappend(proc, proclen, " yEnc ");
+			charpushback(proc, proclen, '(');
+			charappend(proc, proclen, unpackntos(n1).c_str());
+			charpushback(proc, proclen, '/');
+			charappend(proc, proclen, unpackntos(n2).c_str());
+			charpushback(proc, proclen, ')');			
+			continue;
+		}
+		if (ch=='\x84')
+		{
+			charpushback(proc, proclen, '.');
+			charappend(proc, proclen, expandext(data[start++]).c_str());
+			continue;
+		}
+		if (ch=='\x85')
+		{
+			charappend(proc, proclen, unpackntos(data[start++]).c_str());
+			
+			continue;
+		}		
+	}
+	proc[proclen]=0;
+	string res=proc;
+	return res;
+}
+
+string group::expandtitle(fileinfo &cf, int backsp)
+{
+	return expandtitle(artnames.v[cf.info[1]], cf.info, 2, 1, backsp);
+}
+
+string group::expandtitle(int fid, int backsp)
+{
+	fileinfo &cf=fis.fil[fid];
+	return expandtitle(artnames.v[cf.info[1]], cf.info, 2, 1, backsp);
+}
+
+int parsedate(string date)
+{
+	return 0;
+}
+
+void inline intpushback(int *d, int &pos, int val, int len)
+{
+	if (pos>=len) return;
+	d[pos++]=val;
+}
+
+void inline charpushback(char *d, int &pos, char val, int len)
+{
+	if (pos>=len-1) return;
+	d[pos++]=val;
+	d[pos]=0;
+}
+
+void inline charappend(char *d, int &pos, const char *val, int len)
+{
+	while (val[0]!=0) 
+	{
+		if (pos>=len-1) break;
+		d[pos++]=val[0];
+		val++;
+	}
+	d[pos]=0;
+}
+
+void group::processtitle(string title, string &vprocessed, vector<int> &vdata, int &haspart)
+{
+	char proc[2048];
+	int  data[512];
+	int  datp[512];
+	int proclen=0;
+	int datalen=0;
+	int datplen=0;
+	int i;
+	char buf[10];
+	char cuch=0,pvch;
+	int yencbefore=0;
+	int tmp;
+	haspart=0;
+	/*
+	int located=title.find("ftd 613075",0);
+	if (located>=0)
+		printf(" ");
+	*/
+	for (i=0; i<(int) title.length(); i++)
+	{
+		pvch=cuch;
+		cuch=title[i];
+		if (cuch<32) // signed
+		{
+			sprintf(buf,"&%02x;",(unsigned char) cuch);
+			charappend(proc,proclen,buf);
+			continue;
+		}
+		if (cuch=='[')
+		{
+			int n1,n2,d1,d2,pos=i+1;
+			if (   matchnr(title,pos,n1,d1)
+						    && (d1<5)
+						    && matchch(title,pos,'/')
+						    && matchnr(title,pos,n2,d2)
+						    && (d2<5)
+						    && matchch(title,pos,']')
+			   )
+			{
+				i=pos-1;
+				haspart=0;
+				charpushback(proc,proclen,'\x82');
+				intpushback(data,datalen,packnumbers(n1,d1,n2,d2,0));
+				continue;
+			}
+		}
+		if (cuch=='(')
+		{
+			int n1,n2,pos=i+1;
+			if (   matchnrpk(title,pos,n1)
+						    && (n1<0x8000)
+						    && matchch(title,pos,'/')
+						    && matchnrpk(title,pos,n2)
+						    && (n2<0x8000)
+						    && matchch(title,pos,')')
+			   )
+			{
+				i=pos-1;
+				haspart=1;
+				charpushback(proc,proclen,'\x83');
+				intpushback(datp,datplen,packtwo(n1,n2,yencbefore));
+				continue;
+			}
+		}
+		yencbefore=0;
+		tmp=i;
+		if (cuch==' ') if (matchstr(title,tmp," yEnc ("))
+		{
+			i+=5;
+			yencbefore=1;
+			continue;
+		}
+		if (cuch=='.')
+		{
+			int extid,pos=i+1;
+			if (matchext(title,pos,extid))
+			{
+				i=pos-1;
+				charpushback(proc,proclen,'\x84');
+				intpushback(data,datalen,extid);
+				continue;
+			}
+
+		}
+		if (isdigit(cuch) && !isdigit(pvch))
+		{
+			int tmp=i;
+			int n1,n2,p2,p3,p0,flg,vs;
+			char ch;
+			matchnrpk(title,tmp,n1);
+			p2=tmp;
+			if (pvch=='"' && matchch(title,p2,'"'))
+			{
+				i=p2-1;
+				charpushback(proc,proclen,'\x85');
+				charpushback(proc,proclen,'"');
+				intpushback(data,datalen,n1);
+				continue;
+			}
+			ch=0;
+			p0=p2=tmp;
+			if (matchvset(title,p2,"/\0 / \0/ \0\0",flg)) ch='\x86';
+			else if (matchvset(title,p2,"-\0 - \0..\0...\0\0",flg)) ch='\x87';
+			else if (matchvset(title,p2,")-(\0\0",flg)) ch='\x87';
+			else if (matchvsetcs(title,p2," of \0 van \0/\0of \0of\0\0",vs,flg)) ch='\x88'+vs;
+			if (ch)
+			{
+				p3=p2;
+				if (matchnrpk(title,p2,n2) && n1<0x8000 && n2<0x8000)
+				{
+					i=p2-1;
+					charpushback(proc,proclen,'\x85');
+					while (p0<p3) charpushback(proc,proclen,title[p0++]);
+					charpushback(proc,proclen,'\x85');
+					intpushback(data,datalen,n1);
+					intpushback(data,datalen,n2);
+					continue;
+				}
+			}
+		}
+		if (cuch=='/') { charappend(proc,proclen,"&SL;"); continue; }
+		if (cuch=='\\') { charappend(proc,proclen,"&BS;"); continue; }
+		if (cuch=='\t') { charappend(proc,proclen,"&T;"); continue; }
+		charpushback(proc,proclen,cuch);
+	}	
+	vprocessed=proc;
+	vdata=vector<int>(datalen+datplen);
+	for (i=0; i<datalen; i++) vdata[i]=data[i];
+	for (i=0; i<datplen; i++) vdata[datalen+i]=datp[i];
+}
+
+string group::msgidcleanup(string postid, int &part, int &pof)
+{
+	int pos=0,cs;
+	string res=postid;
+	part=-1;
+	pof=-1;
+	matchch(postid,pos,'<');
+	do {
+		if (!matchstrvcase(postid,pos,"part",cs)) continue;
+		if (!matchnr(postid,pos,part,cs)) continue;
+		if (!matchstrvcase(postid,pos,"of",cs)) continue;
+		if (!matchnr(postid,pos,pof,cs)) continue;
+		matchch(postid,pos,'.');
+		res=postid.substr(pos,postid.length());
+		pos=0;
+	} while (0);
+	if (pos==1) res=postid.substr(pos,postid.length());
+	int lsplit=res.rfind("@",res.length());
+	if (lsplit>6) res=res.substr(0,lsplit);
+	return res;
+}
+
+int suitablefilename(string s)
+{
+	int i,fnd,suit;
+	int sl=s.length();
+	static char *tofind="rar\0zip\0par\0vol\0avi\0mp3\0cue\0txt\0nzb\0nfo\0txt\0ace\0flac\0"
+			"htm\0wav\0wmv\0\0";
+	if (s.length()<2) return 0;
+	fnd=0;
+	suit=0;
+	for (i=0; i<sl; i++)
+	{
+		char ch=s[i];
+		if (ch=='.')
+		{
+			suit+=1;
+			if (i==sl-4 || i==sl-5)
+				suit+=10;
+			int pos=i+1;
+			int q1,q2;
+			if (matchvsetcs(s,pos,tofind,q1,q2)) pos+=20;
+		}
+		if (!isdigit(ch) && !isspace(ch))
+		{
+			fnd=1;
+		}
+	}
+	if (!fnd) return 0;
+	return suit+1;
+}
+
+string group::escapefilename(const string &s)
+{
+	char proc[2048];
+	int proclen=0;
+	int i;
+	for (i=0; i<(int) s.length(); i++)
+	{
+		char ch=s[i];
+		if (ch<32) // signed
+		{
+			char buf[8];
+			sprintf(buf,"&%02x;",(unsigned char) ch);
+			charappend(proc,proclen,buf);
+			continue;
+		}		
+		if (ch=='/') { charappend(proc,proclen,"&SL;"); continue; }
+		if (ch=='\\') { charappend(proc,proclen,"&BS;"); continue; }
+		if (ch=='\t') { charappend(proc,proclen,"&T;"); continue; }
+		charpushback(proc,proclen,ch);
+	}
+	proc[proclen]=0;
+	return proc;
+}
+
+int group::producefilename(const string &s)
+{
+	string res;
+	string opt;
+	res=s;
+	const int LCUT=768;
+
+	int quotpos;
+	int bestsuitablequoted=0;
+	//int sl=s.length();
+
+	quotpos=s.find("\"",0);
+	while (quotpos>=0)
+	{
+		int qp2=s.find("\"",quotpos+1);
+		if (qp2<quotpos+1) break;
+		string res2=s.substr(quotpos+1,qp2-quotpos-1);
+		int suit=suitablefilename(res2);
+		if (suit>bestsuitablequoted)
+		{
+			bestsuitablequoted=suit;
+			res=res2;
+		}
+		quotpos=s.find("\"",qp2+1);
+	}
+	res=escapefilename(res);
+	if ((int) res.length()>LCUT) res=res.substr(0,5)+".."+res.substr(res.length()-LCUT+7,LCUT-7);
+	opt=res;
+	int cnt=112;
+	int resl=res.length();
+	int extp=resl;
+	int i;
+	for (i=resl-1; i>=0 && i>resl-12; i--)
+		if (res[i]=='.') { extp=i; }
+	if (extp==resl) extp=0;
+
+	while (filenames.find(opt,0)>=0)
+	{
+		opt=res.substr(0,extp)+".("+unpackntos(cnt)+")"+res.substr(extp,resl);
+		cnt++;
+	}
+	return filenames.find(opt);
+}

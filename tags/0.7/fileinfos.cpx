@@ -1,0 +1,302 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+uses includes;
+
+typedef vector<int> intvector;
+// we deal with single server for now, but even on a single server
+// sometimes there are reposts. We keep at most two message IDs for
+// a duplicate part
+int partvectors=2;
+
+struct packdflagss
+{
+	unsigned int sizeknown:1;
+	unsigned int sizeguess:1;
+	unsigned int middknown:1;
+	unsigned int middguess:1;
+	unsigned int lastknown:1;
+	unsigned int lastguess:1;
+	unsigned int complete:1;
+	unsigned int idmismatch:1;
+	unsigned int hasparts:1;
+	unsigned int initialized:1;
+	unsigned int partstartzero:1;
+	unsigned int haswarnings:1;
+	unsigned int headersread:1;
+	unsigned int enty:4; // 00 - unknown, 01 yenc, 02 uuencode, 03 MIME
+};
+
+struct packdflags:public packdflagss
+{
+	operator int();
+	void operator =(int);
+};
+		
+struct fileinfo
+{
+	fileinfo():sizemidd(0), sizelast(0), sizetotal(0), subgroup(0), partsfound(0)
+		{ flags=0; parts.resize(partvectors); }
+	packdflags flags;
+	intvector info;
+	vector<intvector> parts;
+	vector<msgidcrc_t> partcrc;	
+	int sizemidd;
+	int sizelast;
+	int sizetotal;
+	int subgroup;
+	int partsfound;
+	string sig;
+	string namebase;
+	string filename;
+
+	void writetofile(gzFile f);
+	void readfromfile(gzFile f);
+};
+
+struct vectorcompare : binary_function<intvector, intvector, bool>
+{
+	bool operator ()(const intvector a,const intvector b)
+	{
+		int i;
+		int la=a.size(), lb=b.size();
+		int lmin=(la<lb)?la:lb;
+		//printf("\nCompare:");
+		for (i=0; i<lmin; i++)
+		{
+			//printf("%d#%d  ",a[i],b[i]);
+			if (a[i]<b[i]) return true;
+			if (a[i]>b[i]) return false;
+		}
+		if (la<lb) return true;
+		return false;
+	}
+
+};
+
+typedef map<intvector, int> fileinfomap;
+typedef vector<fileinfo> fileinfovector;
+
+class fileinfos
+{
+public:
+	fileinfomap fim;
+	fileinfovector fil;
+	int find(const intvector &v, int allowadd=1);
+
+	void writetofile(gzFile f);
+	void readfromfile(gzFile f);
+};
+
+string readstring(gzFile fd);
+
+implementation
+
+uses packednumbers;
+
+packdflags::operator int()
+{
+	union
+	{
+		packdflagss a;
+		int b;
+	} u;
+	u.a=*this;
+	return u.b;
+}
+		
+void packdflags::operator =(int v)
+{
+	union
+	{
+		packdflags a;
+		int b;
+	} u;
+	u.b=v;
+	*this=u.a;
+}
+		
+int fileinfos::find(const intvector &v, int allowadd)
+{
+	int crt;
+	fileinfomap::iterator it;
+	it=fim.find(v);
+	/*
+	printf("tofind:");
+	for (int i=0; i<v.size(); i++) printf("%d:",v[i]);
+	printf("\n");
+	*/
+	if (it!=fim.end()) 
+	{
+	//	printf("\n");
+		return it->second;
+	}
+	//printf("\n");
+	if (!allowadd) return -1;
+	crt=fil.size();
+
+	fileinfo fi;	
+	
+	fim[v]=crt;
+	fi.info=v;
+	fil.push_back(fi);
+	return crt;
+}
+
+void fileinfos::writetofile(gzFile fd)
+{
+	int i;
+	gzprintf(fd,"%d\n",fil.size());
+	for (i=0; i<(int) fil.size(); i++)
+		fil[i].writetofile(fd);
+}
+
+void fileinfos::readfromfile(gzFile fd)
+{
+	int count,i;
+	char buf[4000];
+	gzgets(fd,buf,3999);
+	sscanf(buf,"%d",&count);
+	assert(count>=0 && count<100000000);
+	fil.resize(count);
+	fim=fileinfomap();
+	for (i=0; i<count; i++)
+	{
+		fil[i].readfromfile(fd);		
+		fim[fil[i].info]=i;		
+	}
+}
+
+template<typename vt>
+void writevectortofile(gzFile fd, vector<vt> dat)
+{
+	int i;
+	int lastnz=0;
+	char buf[10];
+	encint(buf,dat.size(),lastnz);
+	lastnz=0;
+	gzprintf(fd,"%s",buf);
+	for (i=0; i<(int) dat.size(); i++)
+	{
+		encint(buf,dat[i],lastnz);
+		gzprintf(fd,"%s",buf);
+	}
+	gzprintf(fd,"\n");
+
+}
+
+template<typename vt>
+void readvectorfromfile(gzFile fd, vector<vt> & dat)
+{
+	char buf[10002];
+	int bufsize;
+	int pos;
+	int lastnz=0;
+	int vecsize;
+	int vecpos;
+	int warning=0;
+	
+	gzgets(fd,buf,10000);
+	bufsize=strlen(buf);
+	pos=0;
+	vecsize=decint(buf,pos,lastnz);
+	assert(vecsize>=0 && vecsize<1000000);
+	dat.resize(vecsize);
+	lastnz=0;
+	vecpos=0;
+	while (vecpos<vecsize)
+	{
+		if (pos>bufsize-10 && buf[bufsize-1]!='\n' && buf[bufsize-1]!='\r')
+		{
+			memcpy(buf,buf+pos,bufsize-pos);
+			gzgets(fd,buf+bufsize-pos,9980);
+			bufsize=strlen(buf);
+			pos=0;
+		}
+		dat[vecpos]=decint(buf,pos,lastnz);
+		if (dat[vecpos]<0)
+		{
+			warning|=1;
+			dat[vecpos]=0;
+		}
+		if (pos>bufsize)
+		{
+			warning|=2;
+			break;
+		}
+		vecpos++;
+	}
+	if (warning & 1) printf("warning... bad article number.\n");
+	if (warning & 2) printf("warning... reading past end-of-buffer.\n");
+}
+
+void fileinfo::writetofile(gzFile fd)
+{
+	int i;
+	gzprintf(fd,"%s\n",filename.c_str());
+	gzprintf(fd,"%s\n",sig.c_str());
+	gzprintf(fd,"%08x %d %d %d %d %d %d\n",
+		(int) flags,partsfound,subgroup,
+   		sizemidd,sizelast,sizetotal,partvectors);
+	writevectortofile(fd, info);
+	for (i=0; i<partvectors; i++)
+		writevectortofile(fd, parts[i]);
+	//writevectortofile(fd, partcrc);
+}
+
+string readstring(gzFile fd)
+{
+	char buf[4000];
+	gzgets(fd,buf,3999);
+	int le=strlen(buf);
+	if (le>0 && buf[le-1]=='\n') buf[--le]=0;
+	if (le>0 && buf[le-1]=='\r') buf[--le]=0;
+	return buf;
+}
+
+int readint(gzFile fd)
+{
+	char buf[4000];
+	gzgets(fd,buf,3999);
+	return atoi(buf);
+}
+
+void fileinfo::readfromfile(gzFile fd)
+{
+	int v;
+	filename=readstring(fd);
+	sig=readstring(fd);
+	char buf[1000];
+	gzgets(fd,buf,999);
+	int pvs,i;
+	sscanf(buf,"%x %d %d %d %d %d %d",
+		&v,
+		&partsfound,&subgroup,&sizemidd,&sizelast,&sizetotal,&pvs);
+	flags=v;
+	assert(pvs>0 && pvs<100);
+	parts=vector<intvector>(pvs);
+	readvectorfromfile(fd,info);
+	for (i=0; i<pvs; i++)
+		readvectorfromfile(fd,parts[i]);
+}

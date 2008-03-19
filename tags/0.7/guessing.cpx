@@ -1,0 +1,74 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+int guesssize(int b, int l);
+
+implementation
+
+int guesssize(int b, int l)
+{
+	if (l==0 || b==0) return 0;
+	int avgline=b/l;
+	
+	if (avgline>128 || avgline<131) avgline=128;
+	else if (avgline> 58 || avgline< 63) avgline= 60;
+	else if (avgline> 62 || avgline< 67) avgline= 64;
+	else if (avgline> 78 || avgline< 83) avgline= 80;
+	else if (avgline>50) avgline=avgline-1;
+	if (l>30) l=(l-10)/16*16;
+	return l*avgline;
+}
+
+void sizeguessupdate(fileinfo &cf, int bytes, int lines, int part)
+{
+	int sg=bytes;//guesssize(bytes,lines);
+	if (!sg) return;
+	if (!cf.flags.hasparts)
+	{
+		if (cf.flags.sizeknown) return;
+		cf.sizetotal=bytes;
+		return;
+	}
+	if (part==(int) cf.parts[0].size())
+	{
+		cf.sizelast=sg;
+		cf.flags.lastguess=1;
+		if (cf.flags.middguess && !cf.flags.sizeknown)
+		{
+			cf.sizetotal=cf.sizemidd*(cf.parts[0].size()-1)+sg;
+			cf.flags.sizeguess=1;
+		}
+	} 
+	else 
+	{
+		cf.sizemidd=sg;
+		cf.flags.middguess=1;
+		if (!cf.flags.sizeguess && !cf.flags.sizeknown)
+		{
+			if (cf.flags.lastguess) cf.sizetotal=sg*(cf.parts[0].size()-1)+cf.sizelast;
+			else cf.sizetotal=sg*cf.parts[0].size();
+			cf.flags.sizeguess=1;
+		}
+	}
+}

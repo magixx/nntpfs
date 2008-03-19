@@ -1,0 +1,388 @@
+/*
+Copyright (c) 2008 Radu Andrei Stefan
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+*/
+
+interface
+
+uses includes, stringset, fileinfos;
+
+struct filedescription
+{
+	int flags;
+	int genpartsize, lastpartsize;
+	vector<int> parts;
+	vector<int> sizepos;
+	string name;
+	int subgroup;
+};
+
+class group
+{
+public:
+	group(string s):groupname(s),modified(0) { gid=gg.find(s,0,0,"."); }
+	~group();
+	void dispprogress();
+	int processentry(string entry, gzFile echogz=0);
+	void processtitle(string title, string &processed, vector<int> &data, int &haspart);
+	string expandtitle(string compressed, vector<int> data, int start=0, int ignl=0, int backsp=1);
+	string expandtitle(fileinfo &cf, int backsp=1);
+	string expandtitle(int id, int backsp=1);
+	string msgidcleanup(string postid, int &part, int &pof);
+	string escapefilename(const string &s);
+	string cachefname(int part=-1);
+	int matchpart(int eid, string msgid, intvector &data, int part, int pof, int &warn);
+	int addnewentry(int eid, string msgid, msgidcrc_t idcrc, intvector &data, int part, int pof);
+	int producefilename(const string &s);
+	void sortcontents();
+	
+	void writetofile();
+	int writetofile(string s);
+	int readfromfile(string s);
+	void writetofile(gzFile f);
+	void readfromfile(gzFile f);
+
+	void readany();
+	void readfromserver(int first, int last, int cachein=1, int cacheout=1);
+	
+	string groupname;
+	int modified;
+	int gid;
+	
+	stringset filenames;
+	stringset artnames;
+	stringset posters;
+	stringset fn_posters;
+	stringset fn_subgroups;
+	vector<intvector> fid_byposter;
+	vector<intvector> fid_bysubgroup;
+	fileinfos fis;	
+private:	
+};
+
+implementation
+
+uses matching, group.titleop, guessing, group.matchpart, globals;
+
+int group::processentry(string entry, gzFile echoto)
+{
+	unsigned long eid=atoi(entry.c_str());
+	int splits[10];
+	int splen[9];
+	int bytes,lines,vdate;
+	int i,cnt;
+	int elen=entry.length();
+	
+	if (!elen) return 1;
+	string postname;
+	string sposter;
+	string msgid="";
+	string origmsgid;
+	cnt=1;
+	splits[0]=0;
+	for (i=0; i<7; i++) if (!isdigit(entry[i])) return 1;
+	for (i=0; i<elen; i++) if (entry[i]=='\t')
+	{
+		splits[cnt++]=i+1;
+		if (cnt>8) break;
+	}
+	while (cnt<9) splits[cnt++]=elen;
+	for (i=0; i<8; i++) 
+	{
+		splen[i]=splits[i+1]-splits[i]-1;
+		if (splen[i]<0) splen[i]=0;
+		if (splits[i]>elen) splits[i]=elen;
+	}
+	postname=         entry.substr(splits[1],splen[1]);
+	sposter =         entry.substr(splits[2],splen[2]);
+	vdate =parsedate( entry.substr(splits[3],splen[3]) );
+	msgid   =         entry.substr(splits[4],splen[4]);
+	bytes   =atoi(    entry.substr(splits[6],splen[6]).c_str() );
+	lines =atoi(      entry.substr(splits[7],splen[7]).c_str() );
+
+	if (echoto)
+	{
+		gzprintf(echoto,"%010d\t%s\t%s\t%d\t%s\t\t%d\t%d\t\n",
+			eid,
+    			postname.c_str(),
+			sposter.c_str(),
+			vdate,
+   			msgid.c_str(),
+			bytes,
+   			lines
+			);
+	}
+	
+	string processed;
+	vector<int> data;
+	int hasparts,verpart,verpof;
+	processtitle(postname,processed,data,hasparts);
+	origmsgid=msgid;
+	msgid=msgidcleanup(msgid,verpart,verpof);
+	
+	int partid=0;
+	int anid=artnames.find(processed);
+	int psid=posters.find(sposter);
+	int fdlen=3+data.size();
+	int npart=0,npof=0,flg,d1,d2;
+	if (hasparts)
+	{
+		partid=data.back();
+		unpackfour(partid,npart,d1,npof,d2,flg);
+	}	
+	intvector filedat=intvector(fdlen);
+	filedat[0]=psid;
+	filedat[1]=anid;
+	for (i=0; i<fdlen-3; i++) filedat[2+i]=data[i];
+	if (hasparts) filedat[fdlen-2]=npof;
+	filedat[fdlen-1]=0; // counter, in case we got more files with the same characteristics
+	int fid,warn;
+
+	fid=matchpart(eid, msgid, filedat, npart, npof, warn);
+	fileinfo &cf=fis.fil[fid];
+	sizeguessupdate(cf,bytes,lines,npart);
+	if (warn) cf.flags.haswarnings=1;
+	if (!cf.flags.initialized)
+	{
+		cf.flags.initialized=1;
+		cf.namebase=processed;
+		string oname=expandtitle(processed,data,0,1,0);
+		int fnid=producefilename(oname);
+		cf.filename=filenames.v[fnid];
+	}
+	if (warn)
+	{
+		string expdname=expandtitle(processed,data);	
+		printf("\n");
+		printf("Date:   %u\n",(unsigned int) eid);
+		printf("Name:   %s\n",postname.c_str());
+		printf("Nexpd:  %s\n",expdname.c_str());
+		printf("Fname:  %s\n",cf.filename.c_str());
+		if (hasparts) printf("Part:   %d/%d\n",npart,npof);
+		printf("Poster: %s\n",sposter.c_str());
+		printf("Date:   %d\n",vdate);
+		printf("Id:     %s\n",msgid.c_str());
+		printf("FullID: %s\n",origmsgid.c_str());
+		printf("Bytes:  %d\n",bytes);
+		printf("Lines:  %d\n",lines);	
+		printf("Processed: >>>%s<<<\n",processed.c_str());
+		int q;
+		printf("Data:   ");
+		for (q=0; q<(int) data.size(); q++) printf("%8x ",data[q]);
+		char ch='0';
+		
+		printf("\nFileID: %4d ",fid);
+		for (q=0; q<3; q++) printf("%d:",filedat[q]);
+		for (q=3; q<fdlen; q++) printf("%x:",filedat[q]);
+		printf("\n-------------------------------------------------------\n");
+		printf("\n\n");
+	
+		if (0) scanf("%c",&ch);
+		if (ch=='a') exit(0);
+	}
+	
+	//int q=artnames.namesl.size();
+	//if (q==found) printf("%s\n",entry.c_str());
+	return 0;
+}
+
+// return 0 on success
+int group::writetofile(string s)
+{
+	gzFile fd=gzopen(s.c_str(),"w");
+	if (fd!=NULL)
+	{
+		writetofile(fd);
+		gzclose(fd);
+	} else return 1;
+	return 0;
+}
+
+// return 0 on success
+int group::readfromfile(string s)
+{
+	gzFile fd=gzopen(s.c_str(),"r");
+	if (fd!=NULL)
+	{
+		readfromfile(fd);
+		gzclose(fd);
+	} else return 1;
+	return 0;
+}
+
+void group::writetofile(gzFile f)
+{
+	gzprintf(f,"%s\n",groupname.c_str());
+	artnames.writetofile(f);
+	posters.writetofile(f);
+	fis.writetofile(f);
+}
+
+void group::readfromfile(gzFile f)
+{
+	int i;
+	groupname=readstring(f);
+	filenames=stringset();
+	artnames.readfromfile(f);
+	posters.readfromfile(f);
+	fis.readfromfile(f);
+	for (i=0; i<(int) fis.fil.size(); i++)
+		filenames.addonpos(fis.fil[i].filename,i);
+}
+
+void group::readfromserver(int first, int last, int cachein, int cacheout)
+{
+	gzFile zf=NULL;
+	gzFile of=NULL;
+	string cachename=cachefname(first/65536);
+	char buf[4000];
+	if (cachein)
+	{
+		zf=gzopen(cachename.c_str(),"r");
+		if (zf!=NULL) cacheout=0;
+	}
+	if (cacheout)
+	{
+		of=gzopen(cachename.c_str(),"w");
+	}
+	if (zf)
+	{
+		while (!gzeof(zf))
+		{
+			gzgets(zf,buf,3999);
+			processentry(buf,NULL);
+		}
+		gzclose(zf);
+		return;
+	}
+	sprintf(buf,"GROUP %s",groupname.c_str());
+	c0->runcommand(buf);
+	sprintf(buf,"OVER %d-%d",first,last);
+	c0->runcommand(buf);
+	while (c0->datalineavailable())
+		processentry(c0->readline(),of);
+	if (of) gzclose(of);
+}
+
+void group::readany()
+{
+	if (readfromfile(cachefname()))
+	{
+		// if cache was not read
+		modified=1;
+		int a=gg.v[gid].artfirst;
+		int b=gg.v[gid].artlast;
+		int p;
+		for (p=a/65536; p<(b+65535)/65536; p++)
+		{
+			readfromserver(p*65536,p*65536+65535);
+			dispprogress();
+		}
+		if (modified)
+		{
+			writetofile();
+			modified=0;
+		}
+	}
+	sortcontents();
+}
+
+void group::writetofile()
+{
+	writetofile(cachefname());
+}
+
+string group::cachefname(int part)
+{
+	char buf[16];
+	if (part<0) sprintf(buf,"/g%05d.cache",gid);
+	else sprintf(buf,"/g%05d.%05d",gid,part);
+	return nntpfsdir+buf;
+}
+
+group::~group()
+{
+	if (modified) writetofile();
+}
+
+void group::sortcontents()
+{
+	int i;
+	int np=posters.v.size();
+	int nf=fis.fil.size();
+	intvector fnamecounts;
+	fn_posters.clear();
+	fn_subgroups.clear();
+	fid_byposter.resize(np);
+	fnamecounts.resize(artnames.v.size());
+	for (i=0; i<(int) artnames.v.size(); i++) fnamecounts[i]=0;
+	for (i=0; i<np; i++)
+	{
+		int an=fn_posters.addunique(escapefilename(posters.v[i]));
+		if (an!=i) fprintf(errlog,"Warning: desync of poster names.\n");
+	}
+	for (i=0; i<nf; i++)
+	{
+		int pid=fis.fil[i].info[0];
+		int anid=fis.fil[i].info[1];
+		fid_byposter[pid].push_back(i);
+		if (anid>=0 && anid<(int) fnamecounts.size()) fnamecounts[anid]++;
+		else fprintf(errlog,"Sort problem, non fatal, bad anid\n");
+	}
+	int oth=fn_subgroups.addunique(".other");
+	int othcount=0;
+	fid_bysubgroup.push_back(intvector());
+	for (i=0; i<nf; i++)
+	{
+		int anid=fis.fil[i].info[1];
+		int q=1, sg=0;
+		if (anid>=0&& anid<(int) fnamecounts.size()) q=fnamecounts[anid];
+		if (q<0) sg=-q;
+		else if (q<3)
+		{
+			othcount++;
+			if (othcount>2048)
+			{
+				oth=fn_subgroups.addunique(".other");
+				othcount=0;
+				fid_bysubgroup.push_back(intvector());	
+			}
+			sg=oth;
+		}
+		else
+		{
+			sg=fn_subgroups.addunique(escapefilename(artnames.v[anid]));
+			fid_bysubgroup.push_back(intvector());
+			fnamecounts[anid]=-sg;
+		}
+		fid_bysubgroup[sg].push_back(i);
+	}
+}
+
+void group::dispprogress()
+{
+	fprintf(stderr,
+		"nameMAP:%d  posters:%d  fileCount:%d mem:%dk\n"
+		,artnames.v.size()
+		,posters.v.size()
+		,fis.fil.size()
+		,(int) sbrk(0)/1024
+	       );	
+}
