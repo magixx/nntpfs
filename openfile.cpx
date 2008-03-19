@@ -79,7 +79,7 @@ uses crc32, globals;
 openfilemanager::~openfilemanager()
 {
 	int i;
-	for (i=0; i<v.size(); i++)
+	for (i=0; i<(int) v.size(); i++)
 	{
 		delete v[i];
 	}

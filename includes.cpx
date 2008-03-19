@@ -45,6 +45,8 @@ interface
 #include <vector>
 #include <map>
 
+#include "version.h"
+
 using namespace std;
 int MAXFILES=65535;
 
