@@ -18,41 +18,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+----------------------------------------------------------------------------
+exceptions marked as such in the sourcecode header
+
 */
-
-interface
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <assert.h>
-#include <netdb.h>
-#include <zlib.h>
-
-#define FUSE_USE_VERSION 26
-#include <fuse.h>
-//#include <fuse_lowlevel.h>
-
-#include <string>
-#include <vector>
-#include <map>
-
-using namespace std;
-int MAXFILES=65535;
-
-#ifndef VERSION
-#define VERSION 0.0
-#endif
-
-#define __STR_VERSION(V) #V
-
-implementation
-

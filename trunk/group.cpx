@@ -48,11 +48,14 @@ public:
 	string msgidcleanup(string postid, int &part, int &pof);
 	string escapefilename(const string &s);
 	string cachefname(int part=-1);
+	
+	int lastrangelow,lastrangehigh;
 	int matchpart(int eid, string msgid, intvector &data, int part, int pof, int &warn);
 	int addnewentry(int eid, string msgid, msgidcrc_t idcrc, intvector &data, int part, int pof);
 	int producefilename(const string &s);
 	void sortcontents();
-	
+
+	int reloadgrouprange();	
 	void writetofile();
 	int writetofile(string s);
 	int readfromfile(string s);
@@ -80,6 +83,20 @@ private:
 implementation
 
 uses matching, group.titleop, guessing, group.matchpart, globals;
+
+int group::reloadgrouprange()
+{
+	int a,cnt;
+	int res=c0->setgroup(groupname,1);
+	lastrangelow=0;
+	lastrangehigh=0;
+	if (!res)
+	{
+		sscanf(c0->getlastresponse().c_str(),"%d %d %d %d",&a,&cnt,&lastrangelow,&lastrangehigh);
+	}
+	lastrangehigh++;
+	return res;
+}
 
 int group::processentry(string entry, gzFile echoto)
 {
@@ -272,8 +289,7 @@ void group::readfromserver(int first, int last, int cachein, int cacheout)
 		gzclose(zf);
 		return;
 	}
-	sprintf(buf,"GROUP %s",groupname.c_str());
-	c0->runcommand(buf);
+	c0->setgroup(groupname);
 	sprintf(buf,"OVER %d-%d",first,last);
 	c0->runcommand(buf);
 	while (c0->datalineavailable())
@@ -283,6 +299,9 @@ void group::readfromserver(int first, int last, int cachein, int cacheout)
 
 void group::readany()
 {
+	reloadgrouprange();
+	gg.v[gid].artfirst=lastrangelow;
+	gg.v[gid].artlast=lastrangehigh-1;
 	if (readfromfile(cachefname()))
 	{
 		// if cache was not read

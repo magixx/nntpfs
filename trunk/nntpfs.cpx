@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
 	{
 		if (0==strcmp(argv[i],"--version"))
 		{
-			printf("nntpfs version " VER_STRING "\n");
+			printf("nntpfs version " __STR_VERSION(VERSION) "\n");
 			return 0;
 		}
 	}

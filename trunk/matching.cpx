@@ -29,9 +29,9 @@ int matchnrpk(const string &s, int &opos, int &v);
 int matchch(const string &s, int &pos, char c);
 int matchstr(const string &s, int &pos, string s2);
 int matchext(const string &s, int &pos, int &extid);
-int matchstrvcase(const string &s, int &pos, char *s2, int &cs);
-int matchvset(const string &s, int &pos, char *s2, int &sel);
-int matchvsetcs(const string &s, int &pos, char *s2, int &sel, int &cs);
+int matchstrvcase(const string &s, int &pos, const char *s2, int &cs);
+int matchvset(const string &s, int &pos, const char *s2, int &sel);
+int matchvsetcs(const string &s, int &pos, const char *s2, int &sel, int &cs);
 int stringsimil(const string &a, const string &b);
 int stringendmatch(const string &a, const string &b, int len=100);
 int stringbeginmatch(const string &a, const string &b, int len=100);
@@ -91,7 +91,7 @@ int matchstr(const string &s, int &pos, string s2)
 	return 0;
 }
 
-int matchvset(const string &s, int &pos, char *seq, int &sel)
+int matchvset(const string &s, int &pos,const char *seq, int &sel)
 {
 	int sl;
 	sel=0;
@@ -105,7 +105,7 @@ int matchvset(const string &s, int &pos, char *seq, int &sel)
 	}
 }
 
-int matchvsetcs(const string &s, int &pos, char *seq, int &sel, int &cs)
+int matchvsetcs(const string &s, int &pos, const char *seq, int &sel, int &cs)
 {
 	int sl;
 	sel=0;
@@ -120,7 +120,7 @@ int matchvsetcs(const string &s, int &pos, char *seq, int &sel, int &cs)
 }
 
 // match string in various case forms: initial, Firstupper=2, ALLUPPER=1
-int matchstrvcase(const string &s, int &pos, char *s2, int &cs)
+int matchstrvcase(const string &s, int &pos,const char *s2, int &cs)
 {
 	char buf[16];
 	int l=strlen(s2);

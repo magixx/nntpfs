@@ -111,6 +111,12 @@ public:
 
 string readstring(gzFile fd);
 
+template<typename vt>
+void writevectortofile(gzFile fd, vector<vt> dat);
+
+template<typename vt>
+void readvectorfromfile(gzFile fd, vector<vt> & dat);
+
 implementation
 
 uses packednumbers;

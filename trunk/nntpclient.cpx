@@ -39,9 +39,10 @@ public:
 	int getresponseid();
 	int scangroups();
 	void showprogress();
-	int setgroup(string s);
+	int setgroup(string s, int force=0);	
 	void checkconnectionstate();
-		
+	string getlastresponse() { return response; }
+	
 	enum Errors
 	{
 	ERR_NOERROR=0,
@@ -128,10 +129,10 @@ void parseServerString(string servstr, string &user, string &passwd, string &ser
 	printf("user:%s\npass:%s\nserver:%s\nport:%d\n", user.c_str(), passwd.c_str(), server.c_str(), port);
 }
 
-int nntpclient::setgroup(string s)
+int nntpclient::setgroup(string s, int force)
 {
 	char buf[1024];
-	if (s==currentgroup) return 0;
+	if (s==currentgroup && !force) return 0;
 	sprintf(buf,"GROUP %s",s.c_str());
 	if (c0->runcommand(buf))
 	{

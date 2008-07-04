@@ -1,0 +1,84 @@
+.\" Copyright 1992 Rickard E. Faith (faith@cs.unc.edu)
+.\" May be distributed freely
+.TH NNTPFS 1 "4 July 2008" "Userspace Filesystems" "Application Manual"
+.SH NAME
+nntpfs \- mount a nntp resource
+.SH SYNOPSIS
+.BI "nntpfs [user[:password]@]server[:port] mountpath"
+.SH DESCRIPTION
+The command
+.B nntpfs
+username, password, port are optional
+when successfully started, the command will display debug messages and will continue 
+running in the current terminal until the directory is unmounted. 
+username, password, port are optional
+
+for unmount, use the command "fusermount \- u mountpoint", the fusermount package 
+should be installed. Alternatively the umount command can be used, but root access 
+may be needed.
+
+In general it is safe to stop the application using Ctrl\-C, however the mountpoint 
+will appear as invalid until unmounted.
+
+Cached data will be saved in a newly\-created .nntpfs directory in the user 
+directory. As stale data is not currently dealt with, the only work\-around at this 
+moment is manually deleting the cache.
+
+If the nntpfs command was successfully started and it is running
+(look for "Connect succeeded." message and "FUSE:loop"), then in the mounted 
+directory, a hierarchy of groups should be available.
+
+In addition to directories corresponding to groups, there are several special 
+directories starting with a dot (ok this may not have been very smart)
+
+* 
+.I .files
+contains a list of all messages (this may be quite large).
+
+*
+.I .sorted
+contains files grouped in subdirectories by using a heuristic.
+Everything that could not be categorized is found in the .other directory.
+
+*
+.I .byauthor
+directory contains messages grouped by poster.
+
+*
+.I .bydate 
+(not working yet)
+will contain messages grouped by date.
+
+listing the contents of any of these directories, or accessing any file inside will 
+result in loading the group contents from the server.
+
+This is done in order to allow navigation within the group tree without loading all 
+group contents on the path. After that Individual messages can be accessed as files. 
+Multipart messages are dealt\-with and they appear as a single file.
+
+.B Warning: 
+listing group contents may be a time and bandwidth consuming operation, the 
+number of posts in a group is found as the size of the .files folder. Keep in mind 
+that the group contents are kept in memory, although in a compacted form.
+
+Filenames may sometimes contain special characters, but in general they seem to be 
+well tolerated by programs like Midnight Commander.
+
+.B Warning:
+using KDE/Gnome programs with a preview function may result in accessing 
+all files in a directory.
+
+.SH OPTIONS
+No options are implemented at this time.
+
+.SH KNOWN BUGS
+
+.SH "SEE ALSO"
+.BR fusermount (1),
+.BR mount (8)
+.SH AUTHOR
+Developed by Radu Andrei Stefan (2008)
+
+CRC32 code by Mark Adler
+
+<radu124@gmail.com>.
