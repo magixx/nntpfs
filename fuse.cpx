@@ -488,7 +488,7 @@ int runfuse()
 
 	//for (i=0; i<10; i++) if (fuseargs[i]!=0) count++; else break;
 	
-	fuseargs[0]="nntpfs";
+	fuseargs[0]=strdup("nntpfs");
 	fuseargs[1]=strdup(mountdir.c_str());
 	fuseargcnt=2;
 	

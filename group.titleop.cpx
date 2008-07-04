@@ -328,7 +328,7 @@ int suitablefilename(string s)
 {
 	int i,fnd,suit;
 	int sl=s.length();
-	static char *tofind="rar\0zip\0par\0vol\0avi\0mp3\0cue\0txt\0nzb\0nfo\0txt\0ace\0flac\0"
+	static const char *tofind="rar\0zip\0par\0vol\0avi\0mp3\0cue\0txt\0nzb\0nfo\0txt\0ace\0flac\0"
 			"htm\0wav\0wmv\0\0";
 	if (s.length()<2) return 0;
 	fnd=0;

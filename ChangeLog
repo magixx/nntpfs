@@ -1,0 +1,11 @@
+2008-07-04 Radu Stefan <radu124@gmail.com>
+	* Makefile.am: created automake configuration
+	* configure.in: created autoconf configuration
+	* version.h: updated version to 0.8
+	* group.cpx: fixed bug, group change for scanning did not update current group
+	* multiple sources: fixed const char * warnings
+	* group.cpx: update group range from group command instead of list
+		=> introduced another bug, now when a group is set to 0 it will stay in 0
+version 0.7
+        introduced version numbering
+    

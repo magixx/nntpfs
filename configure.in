@@ -1,0 +1,101 @@
+
+AC_PREREQ(2.61)
+
+AC_INIT(nntpfs, 0.8)
+AM_INIT_AUTOMAKE(nntpfs,0.8)
+
+AC_LANG(C++)
+
+AC_CHECK_TOOL([STRIP],[strip])
+AC_CONFIG_SRCDIR([mplayerfs.cpp])
+# AC_CONFIG_HEADER([config.h])
+
+# Checks for programs.
+AC_PROG_CXX
+AC_PROG_CC
+AC_PROG_INSTALL
+
+AC_ARG_WITH(libfuse,
+AS_HELP_STRING(--with-libfuse=DIR,
+   [use libfuse from DIR/lib (nntpfs and mplayerfs depend on it)]),
+   [ac_cv_use_libfuse="$withval"
+   AC_MSG_RESULT([
+    ** 
+    ** USING LIBFUSE PATH: $withval
+    **
+   ])
+   CPPFLAGS="$CPPFLAGS -I$withval/include"
+   LDFLAGS="$LDFLAGS -L$withval/lib"])
+
+AC_ARG_WITH(libz,
+AS_HELP_STRING(--with-libz=DIR,
+   [use libz from DIR/lib (nntpfs depends on it)]),
+   [ac_cv_use_libz="$withval"
+   AC_MSG_RESULT([
+    ** 
+    ** USING LIBZ PATH: $withval
+    **
+   ])
+   CPPFLAGS="$CPPFLAGS -I$withval/include"
+   LDFLAGS="$LDFLAGS -L$withval/lib"])
+
+# Checks for libraries.
+CPPFLAGS="$CPPFLAGS -D_FILE_OFFSET_BITS=64"
+    
+AC_CHECK_HEADERS([fuse.h])
+AC_CHECK_LIB(fuse, fuse_new,,
+    [AC_MSG_ERROR([
+      * fuse library `libfuse' not found or
+      * fuse header `fuse.h' not found
+      Please install the library and its header files
+      or specify `--with-libfuse=DIR', when the library 
+      is installed in a custom directory in DIR/lib
+      and the header files are installed in DIR/include.])]
+)
+
+AC_COMPILE_IFELSE([
+    AC_LANG_PROGRAM([[
+#define FUSE_USE_VERSION 26
+#include <fuse.h>
+
+fuse_operations a;
+
+]],
+      [[a.lock=NULL;
+      return 0;]])],,
+      AC_MSG_ERROR([
+      * fuse version check failed
+      * check if library version is at least 2.6
+	])
+)
+
+
+AC_CHECK_HEADERS([zlib.h])
+AC_CHECK_LIB([z], [gzopen],,
+    [AC_MSG_ERROR([
+      * zlib library `libz' not found or
+      * zlib header `zlib.h' not found
+      Please install the library and its header files
+      or specify `--with-libz=DIR', when the library 
+      is installed in a custom directory in DIR/lib
+      and the header files are installed in DIR/include.])]
+)
+
+# Checks for header files.
+AC_HEADER_STDC
+AC_CHECK_HEADERS([fcntl.h stdlib.h string.h unistd.h])
+
+# Checks for typedefs, structures, and compiler characteristics.
+AC_C_CONST
+AC_TYPE_UID_T
+AC_TYPE_MODE_T
+AC_TYPE_OFF_T
+AC_TYPE_SIZE_T
+
+# Checks for library functions.
+AC_FUNC_FORK
+AC_FUNC_MALLOC
+AC_TYPE_SIGNAL
+AC_CHECK_FUNCS([dup2 memset strdup strerror])
+
+AC_OUTPUT(Makefile)

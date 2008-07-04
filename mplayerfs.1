@@ -1,0 +1,43 @@
+.\" Copyright 1992 Rickard E. Faith (faith@cs.unc.edu)
+.\" May be distributed freely
+.TH MPLAYERFS 1 "4 July 2008" "Userspace Filesystems" "Application Manual"
+.SH NAME
+mplayerfs \- create a read-only mount that calls mplayer or any other application redirecting the input to whatever file is written to it
+.SH SYNOPSIS
+.BI "mplayerfs [mountpoint]"
+
+.BI "mplayerfs /full/path/to/mplayer [mountpoint]"
+
+.BI "mplayerfs /full/path/to/mplayer <mountpoint> options"
+
+.SH DESCRIPTION
+
+.B mplayerfs
+
+The command starts mplayer [default] or any other application, piping into its 
+input any file that is written under the mountpoint.
+
+The default path is 
+.B /usr/local/bin/mplayer
+and the default mountpoint 
+.B /mnt/mplayerfs
+
+It is useful for example for playing files from archives, without having to unpack them locally.
+The drawback is that the seek operation cannot be performed.
+
+Only one file at a time can be written to the filesystem.
+
+The program will continue running in the current console until unmount.
+
+.SH OPTIONS
+The options are passed to the called program. By default, the "-" option is 
+passed to mplayer in order to set the input to the standard input.
+
+.SH KNOWN BUGS
+
+.SH "SEE ALSO"
+.BR fusermount (1),
+.BR mount (8)
+.SH AUTHOR
+Developed by Radu Andrei Stefan (2008)
+<radu124@gmail.com>.
